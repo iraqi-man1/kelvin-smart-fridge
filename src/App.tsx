@@ -325,7 +325,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
     {mobileNav && <button className="sidebar-scrim" onClick={() => setMobileNav(false)} aria-label={t.closeMenu}/>}
 
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><div><span className="wordmark" lang="en">{APP_NAME}</span><small>{t.tagline}</small></div></div>
+      <div className="brand"><img className="brand-mark" src="/favicon.svg" alt="" aria-hidden="true"/><div><span className="wordmark" lang="en">{APP_NAME}</span><small>{t.tagline}</small></div></div>
       <SideNav page={page} admin={canManage(user)} unread={unread} onGo={go}/>
       {/* Your own things sit at the bottom: settings, theme, lock, then your account. */}
       <div className="nav-group nav-bottom">

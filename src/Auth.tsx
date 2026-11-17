@@ -147,7 +147,7 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
     </div>
     <ThemeToggle theme={theme} onToggle={toggle}/>
   </div>;
-  const brand = <div className="brand auth-brandline"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><div><span className="wordmark" lang="en">{app}</span><small>{t.tagline}</small></div></div>;
+  const brand = <div className="brand auth-brandline"><img className="brand-mark" src="/favicon.svg" alt="" aria-hidden="true"/><div><span className="wordmark" lang="en">{app}</span><small>{t.tagline}</small></div></div>;
 
   return <TooltipProvider delayDuration={300}><div className="auth-page">
     {/* Phones and iPads: one top bar with the name and the language/theme buttons. */}

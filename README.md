@@ -1,5 +1,7 @@
 <div dir="rtl">
 
+<img src="public/icon.svg" alt="" width="88" align="right">
+
 # Kelvin — مراقبة الثلاجة الذكية
 
 **IoT Based Smart Food Storage and Waste Reduction**

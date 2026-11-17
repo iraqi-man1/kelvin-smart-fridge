@@ -119,11 +119,7 @@ svg { flex-shrink: 0; }
 /* Sidebar */
 .sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; width: var(--sidebar); display: flex; flex-direction: column; padding: 20px 12px 16px; background: var(--surface); border-inline-end: 1px solid var(--line); z-index: 30; overflow-y: auto; scrollbar-gutter: stable; overscroll-behavior: contain; scrollbar-width: thin; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; }
-.brand-mark { width: 30px; height: 30px; border-radius: 6px; background: var(--ink); display: flex; align-items: flex-end; justify-content: center; gap: 3px; padding-bottom: 7px; }
-.brand-mark i { width: 4px; border-radius: 1px; }
-.brand-mark i:nth-child(1) { height: 9px; background: #ff8a4c; }
-.brand-mark i:nth-child(2) { height: 15px; background: #5aa9ef; }
-.brand-mark i:nth-child(3) { height: 11px; background: #38d9a9; }
+.brand-mark { width: 30px; height: 30px; flex: none; display: block; border-radius: 7px; }
 .wordmark { display: block; font-size: 20px; font-weight: 700; line-height: 1.1; }
 .brand small { display: block; font-size: 11px; color: var(--ink-3); letter-spacing: .01em; }
 .sidebar nav, .nav-group { display: flex; flex-direction: column; gap: 2px; }
@@ -747,8 +743,7 @@ select, .form-grid input { height: 36px; padding: 0 10px; border: 1px solid var(
 .lock-screen::after { content: ''; position: absolute; inset: 0; background: rgba(6, 12, 20, 0); transition: background .4s ease, backdrop-filter .4s ease; pointer-events: none; }
 .lock-screen.signin::after { background: rgba(6, 12, 20, .42); backdrop-filter: blur(24px) saturate(1.1); }
 .lock-top { position: absolute; top: 24px; inset-inline-start: 28px; z-index: 2; display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: rgba(255, 255, 255, .85); }
-.lock-top .brand-mark { width: 26px; height: 26px; padding-bottom: 6px; background: rgba(255, 255, 255, .92); }
-.lock-top .brand-mark i { width: 3.5px; }
+.lock-top .brand-mark { width: 26px; height: 26px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .25); }
 .lock-clock { position: absolute; left: 0; right: 0; top: 15vh; z-index: 1; text-align: center; transition: transform .45s cubic-bezier(.2, .7, .2, 1), opacity .35s ease; }
 .lock-screen.signin .lock-clock { transform: translateY(-60px); opacity: 0; pointer-events: none; }
 .lock-time { display: block; font: 600 clamp(84px, 11vw, 148px)/1 'IBM Plex Sans Arabic', system-ui, sans-serif; letter-spacing: -.035em; text-shadow: 0 4px 40px rgba(0, 0, 0, .25); }

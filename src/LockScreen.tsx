@@ -142,7 +142,7 @@ export function LockScreen({ user, onUnlocked, onSignOut, setLang }: Props) {
     <div className="lock-bg" aria-hidden="true"><i/><i/><i/></div>
 
     <header className="lock-top">
-      <span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><span lang="en">Kelvin</span>
+      <img className="brand-mark" src="/favicon.svg" alt="" aria-hidden="true"/><span lang="en">Kelvin</span>
     </header>
 
     <div className="lock-clock" aria-hidden={phase !== 'clock'}>
