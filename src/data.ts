@@ -39,6 +39,16 @@ export function createDemoHistory(): Reading[] {
   }));
 }
 
+/** Demo readings for any earlier period (for comparison): one every 5 minutes, a little different from today. */
+export function demoRange(from: number, to: number): Reading[] {
+  const out: Reading[] = [];
+  for (let t = Math.ceil(from / 300000) * 300000; t <= to; t += 300000) {
+    const v = demoValues(t / 300000 + 11, false);
+    out.push({ id: `demo-cmp-${t}`, timestamp: t, ...v, temperature: v.temperature - 1, deviceId: 'ESP32-DEMO' });
+  }
+  return out;
+}
+
 export function nextDemoReading(previous: Reading): Reading {
   return {
     ...previous, id: `demo-${Date.now()}`, timestamp: Date.now(),

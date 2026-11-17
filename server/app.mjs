@@ -7,6 +7,7 @@ import { openStore } from './store.mjs';
 import { createMailer } from './mailer.mjs';
 import { createSupport, SupportError } from './support.mjs';
 import { createActivity } from './activity.mjs';
+import { createSecurity, DEVICE_COOKIE, DEVICE_DAYS } from './security.mjs';
 
 /**
  * Kelvin's API, shared by the local server (server.mjs) and the Netlify function
@@ -26,14 +27,27 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
   const alerts = createAlerts({ ...settingsIO('alerts'), loadState: () => store.getSetting('alerts_state'), saveState: s => store.setSetting('alerts_state', s) });
   const mailer = createMailer();
   log(`[email] ${mailer.configured ? 'sending is set up' : 'not set up (two-step sign-in stays off)'}`);
-  const accounts = createAccounts({ store, mailer, vaultKey: process.env.VAULT_KEY || databaseUrl || 'kelvin-local' });
+  const security = createSecurity({ store, mailer });
+  // Admin-set passwords are sealed with VAULT_KEY. Older entries sealed with the database
+  // address (before VAULT_KEY was set) are still read and re-sealed with VAULT_KEY.
+  const vaultKey = process.env.VAULT_KEY || databaseUrl || 'kelvin-local';
+  const accounts = createAccounts({
+    store, mailer, vaultKey, oldVaultKeys: [databaseUrl, 'kelvin-local'],
+    onLocked: async user => {
+      await security.record('account-locked', { target: user });
+      await security.notify(user, 'locked', {});
+    },
+  });
   const device = createDevice({ store });
   const support = createSupport({ store });
   const activity = createActivity({ store });
   // Badges must never break a request.
   const note = (userId, event) => (event ? activity.record(userId, event) : activity.seen(userId)).catch(e => console.error('[activity]', e.message));
 
-  function json(res, status, data, headers = {}) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers }); res.end(JSON.stringify(data)); }
+  function json(res, status, data, headers = {}) {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', ...headers });
+    res.end(JSON.stringify(data));
+  }
 
   class TooLarge extends Error {}
   async function body(req, limit) {
@@ -53,15 +67,26 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
   const https = req => serverless || req.headers['x-forwarded-proto'] === 'https';
   const origin = req => `${https(req) ? 'https' : 'http'}://${req.headers.host}`;
 
-  function sessionToken(req) {
+  function cookie(req, name) {
     for (const part of (req.headers.cookie || '').split(';')) {
       const [k, ...v] = part.trim().split('=');
-      if (k === SESSION_COOKIE) return decodeURIComponent(v.join('='));
+      if (k === name) return decodeURIComponent(v.join('='));
     }
     return null;
   }
+  const sessionToken = req => cookie(req, SESSION_COOKIE);
+  const ua = req => String(req.headers['user-agent'] ?? '').slice(0, 300);
+  /** Who did it, from where: added to every audit entry made for a request. */
+  const ctx = (req, extra = {}) => ({ ip: clientIp(req), ua: ua(req), ...extra });
+  const audit = (action, req, extra) => security.record(action, ctx(req, extra));
   // On HTTPS the cookie is also Secure, so it never travels unencrypted.
   const setSession = (req, token) => ({ 'Set-Cookie': `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86400}${https(req) ? '; Secure' : ''}` });
+  // After any sign-in: the session cookie, plus the browser's device id (for new-device notices).
+  async function signedIn(req, user, token) {
+    const { deviceId } = await security.signedIn(user, { deviceId: cookie(req, DEVICE_COOKIE), ip: clientIp(req), ua: ua(req), link: origin(req) });
+    const device = `${DEVICE_COOKIE}=${deviceId}; HttpOnly; SameSite=Lax; Path=/api/; Max-Age=${DEVICE_DAYS * 86400}${https(req) ? '; Secure' : ''}`;
+    return { 'Set-Cookie': [setSession(req, token)['Set-Cookie'], device] };
+  }
   const clearSession = req => ({ 'Set-Cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${https(req) ? '; Secure' : ''}` });
 
   async function handleAccount(req, res, url) {
@@ -75,32 +100,47 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
     if (p === '/api/auth/invite' && m === 'POST') {
       const { user, token: t } = await accounts.acceptInvite(await jsonBody(req), ip);
       await note(user.id, 'login');
-      return json(res, 201, { user }, setSession(req, t));
+      await audit('invite-accepted', req, { actor: user });
+      return json(res, 201, { user }, await signedIn(req, user, t));
     }
     if (p === '/api/auth/register' && m === 'POST') {
       const { user, token: t } = await accounts.register(await jsonBody(req));
       await note(user.id, 'login');
-      return json(res, 201, { user }, setSession(req, t));
+      return json(res, 201, { user }, await signedIn(req, user, t));
     }
     if (p === '/api/auth/login' && m === 'POST') {
-      const result = await accounts.login(await jsonBody(req), ip);
+      const input = await jsonBody(req);
+      let result;
+      try { result = await accounts.login(input, ip); } catch (error) {
+        // Failed and blocked sign-ins go in the security log (the email typed, never the password).
+        const tried = typeof input?.email === 'string' ? input.email.trim().toLowerCase().slice(0, 120) : '';
+        if (error?.code === 'bad-credentials') await audit('login-failed', req, { detail: tried });
+        if (error?.code === 'too-many') await audit('login-blocked', req, { detail: tried });
+        throw error;
+      }
       // Two-step sign-in: no session yet, the browser asks for the emailed code.
       if (result.otp) return json(res, 202, { otp: result.otp });
       await note(result.user.id, 'login');
-      return json(res, 200, { user: result.user }, setSession(req, result.token));
+      return json(res, 200, { user: result.user }, await signedIn(req, result.user, result.token));
     }
     if (p === '/api/auth/otp/verify' && m === 'POST') {
       const { user, token: t } = await accounts.verifyLogin(await jsonBody(req), ip);
       await note(user.id, 'login');
-      return json(res, 200, { user }, setSession(req, t));
+      return json(res, 200, { user }, await signedIn(req, user, t));
     }
     if (p === '/api/auth/reset/request' && m === 'POST') return json(res, 200, { otp: await accounts.requestReset(await jsonBody(req)) });
     if (p === '/api/auth/reset/confirm' && m === 'POST') {
       const { user, token: t } = await accounts.resetPassword(await jsonBody(req), ip);
-      return json(res, 200, { user }, setSession(req, t));
+      await audit('password-reset', req, { actor: user });
+      return json(res, 200, { user }, await signedIn(req, user, t));
     }
     if (p === '/api/auth/otp/resend' && m === 'POST') return json(res, 200, { otp: await accounts.resendCode(await jsonBody(req)) });
-    if (p === '/api/auth/logout' && m === 'POST') { await accounts.logout(token); return json(res, 200, { ok: true }, clearSession(req)); }
+    if (p === '/api/auth/logout' && m === 'POST') {
+      const who = await accounts.sessionFor(token);
+      await accounts.logout(token);
+      if (who) await audit('logout', req, { actor: who.user });
+      return json(res, 200, { ok: true }, clearSession(req));
+    }
 
     const found = await accounts.sessionFor(token);
     if (!found) return json(res, 401, { error: 'signed-out' });
@@ -122,16 +162,28 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
     if (session.locked) return json(res, 423, { error: 'locked' });
 
     if (p === '/api/me' && m === 'PUT') return json(res, 200, { user: await accounts.updateProfile(user, await jsonBody(req)) });
-    if (p === '/api/me' && m === 'DELETE') { await accounts.deleteAccount(user, (await jsonBody(req)).password); await activity.forget(user.id); return json(res, 200, { ok: true }, clearSession(req)); }
+    if (p === '/api/me' && m === 'DELETE') {
+      await accounts.deleteAccount(user, (await jsonBody(req)).password);
+      await activity.forget(user.id); await security.forget(user.id);
+      await audit('account-deleted', req, { actor: user });
+      return json(res, 200, { ok: true }, clearSession(req));
+    }
     // Badges: usage numbers, and the one event the browser reports itself (an Excel export).
     if (p === '/api/me/activity' && m === 'GET') return json(res, 200, { stats: await activity.stats(user) });
     if (p === '/api/me/activity' && m === 'POST') { if ((await jsonBody(req)).event === 'export') await note(user.id, 'export'); return json(res, 200, { stats: await activity.stats(user) }); }
-    if (p === '/api/me/prefs' && m === 'PUT') return json(res, 200, { user: await accounts.savePrefs(user, await jsonBody(req, 32768)) });
+    if (p === '/api/me/prefs' && m === 'PUT') {
+      const patch = await jsonBody(req, 32768);
+      const before = JSON.stringify(user.prefs?.settings ?? {});
+      const saved = await accounts.savePrefs(user, patch);
+      // The admin's thresholds apply to everyone: a real change is worth a line in the log.
+      if (patch && typeof patch === 'object' && 'settings' in patch && before !== '{}' && JSON.stringify(saved.prefs?.settings ?? {}) !== before) await audit('settings-changed', req, { actor: user });
+      return json(res, 200, { user: saved });
+    }
     if (p === '/api/me/otp/start' && m === 'POST') return json(res, 200, { otp: await accounts.startOtp(user, (await jsonBody(req)).lang) });
-    if (p === '/api/me/otp/enable' && m === 'POST') return json(res, 200, { user: await accounts.enableOtp(user, await jsonBody(req), ip) });
-    if (p === '/api/me/otp/disable' && m === 'POST') return json(res, 200, { user: await accounts.disableOtp(user, (await jsonBody(req)).password) });
+    if (p === '/api/me/otp/enable' && m === 'POST') { const u = await accounts.enableOtp(user, await jsonBody(req), ip); await audit('otp-on', req, { actor: user }); return json(res, 200, { user: u }); }
+    if (p === '/api/me/otp/disable' && m === 'POST') { const u = await accounts.disableOtp(user, (await jsonBody(req)).password); await audit('otp-off', req, { actor: user }); return json(res, 200, { user: u }); }
     if (p === '/api/me/lock-code' && m === 'PUT') return json(res, 200, { user: await accounts.setLockCode(user, await jsonBody(req)) });
-    if (p === '/api/me/password' && m === 'PUT') { await accounts.changePassword(user, await jsonBody(req), token); return json(res, 200, { ok: true }); }
+    if (p === '/api/me/password' && m === 'PUT') { await accounts.changePassword(user, await jsonBody(req), token); await audit('password-changed', req, { actor: user }); return json(res, 200, { ok: true }); }
     if (p === '/api/me/avatar' && m === 'POST') return json(res, 200, { user: await accounts.setAvatar(user, await body(req, 2 * 1024 * 1024 + 1)) });
     if (p === '/api/me/avatar' && m === 'DELETE') return json(res, 200, { user: await accounts.removeAvatar(user) });
     return null;
@@ -182,7 +234,9 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
       }
       if (p === '/api/support/config' && req.method === 'PUT') {
         if (!allowed('manage')) return forbidden();
-        return reply(200, { config: await support.update(await jsonBody(req)) });
+        const config = await support.update(await jsonBody(req));
+        await audit('support-changed', req, { actor: me });
+        return reply(200, { config });
       }
       if (p === '/api/support/test' && req.method === 'POST') {
         if (!allowed('manage')) return forbidden();
@@ -197,6 +251,7 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
         const { type, value } = await jsonBody(req);
         const command = await device.add(type, value, me.name);
         await note(me.id, 'command');
+        await audit('device-command', req, { actor: me, detail: String(type) });
         return reply(201, { command });
       }
       if (p.startsWith('/api/device/commands/') && req.method === 'DELETE') {
@@ -206,11 +261,22 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
       }
       if (p === '/api/device/keys' && req.method === 'POST') {
         if (!allowed('manage')) return forbidden();
-        return reply(201, await device.createKey((await jsonBody(req)).label, me.name));
+        const made = await device.createKey((await jsonBody(req)).label, me.name);
+        await audit('key-created', req, { actor: me, detail: `…${made.entry.hint}` });
+        return reply(201, made);
+      }
+      if (/^\/api\/device\/keys\/[^/]+\/rotate$/.test(p) && req.method === 'POST') {
+        if (!allowed('manage')) return forbidden();
+        const made = await device.rotateKey(p.split('/')[4], me.name);
+        await audit('key-rotated', req, { actor: me, detail: `…${made.old.hint} → …${made.entry.hint}` });
+        return reply(201, made);
       }
       if (p.startsWith('/api/device/keys/') && req.method === 'DELETE') {
         if (!allowed('manage')) return forbidden();
-        await device.revokeKey(p.split('/').pop());
+        const id = p.split('/').pop();
+        const gone = (await device.status()).keys.find(k => k.id === id);
+        await device.revokeKey(id);
+        if (gone) await audit('key-revoked', req, { actor: me, detail: `…${gone.hint}` });
         return reply(200, await device.status());
       }
 
@@ -221,13 +287,47 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
         if (p === '/api/admin/users' && req.method === 'GET') {
           return reply(200, { users: await accounts.listUsers(), invites: await accounts.listInvites() });
         }
-        if (/^\/api\/admin\/users\/[^/]+\/password$/.test(p) && req.method === 'GET') return reply(200, await accounts.revealPassword(id));
-        if (/^\/api\/admin\/users\/[^/]+\/password$/.test(p) && req.method === 'PUT') return reply(200, await accounts.setPassword(me, id, (await jsonBody(req)).password));
-        if (/^\/api\/admin\/invites\/[^/]+\/resend$/.test(p) && req.method === 'POST') return reply(200, await accounts.resendInvite(me, id, (await jsonBody(req)).lang, origin(req)));
-        if (p.startsWith('/api/admin/users/') && req.method === 'PUT') return reply(200, { user: await accounts.setRole(me, id, (await jsonBody(req)).role) });
-        if (p.startsWith('/api/admin/users/') && req.method === 'DELETE') { await accounts.removeUser(me, id); return reply(200, { ok: true }); }
-        if (p === '/api/admin/invites' && req.method === 'POST') return reply(201, await accounts.createInvite(me, await jsonBody(req), origin(req)));
-        if (p.startsWith('/api/admin/invites/') && req.method === 'DELETE') { await accounts.revokeInvite(id); return reply(200, { ok: true }); }
+        if (p === '/api/admin/audit' && req.method === 'GET') return reply(200, { entries: await security.list({ limit: 400 }) });
+        const target = async () => (await accounts.listUsers()).find(u => u.id === id) ?? null;
+        if (/^\/api\/admin\/users\/[^/]+\/password$/.test(p) && req.method === 'GET') {
+          const out = await accounts.revealPassword(id);
+          await audit('password-viewed', req, { actor: me, target: await target() });
+          return reply(200, out);
+        }
+        if (/^\/api\/admin\/users\/[^/]+\/password$/.test(p) && req.method === 'PUT') {
+          const out = await accounts.setPassword(me, id, (await jsonBody(req)).password);
+          await audit('password-set', req, { actor: me, target: await target() });
+          return reply(200, out);
+        }
+        if (/^\/api\/admin\/invites\/[^/]+\/resend$/.test(p) && req.method === 'POST') {
+          const out = await accounts.resendInvite(me, id, (await jsonBody(req)).lang, origin(req));
+          await audit('invite-resent', req, { actor: me, target: out.invite?.email ?? '' });
+          return reply(200, out);
+        }
+        if (p.startsWith('/api/admin/users/') && req.method === 'PUT') {
+          const role = (await jsonBody(req)).role;
+          const user = await accounts.setRole(me, id, role);
+          await audit('role-changed', req, { actor: me, target: user, detail: String(role) });
+          return reply(200, { user });
+        }
+        if (p.startsWith('/api/admin/users/') && req.method === 'DELETE') {
+          const who = await target();
+          await accounts.removeUser(me, id);
+          await security.forget(id);
+          await audit('user-removed', req, { actor: me, target: who });
+          return reply(200, { ok: true });
+        }
+        if (p === '/api/admin/invites' && req.method === 'POST') {
+          const out = await accounts.createInvite(me, await jsonBody(req), origin(req));
+          await audit('invite-sent', req, { actor: me, target: out.invite?.email ?? '', detail: out.invite?.role ?? '' });
+          return reply(201, out);
+        }
+        if (p.startsWith('/api/admin/invites/') && req.method === 'DELETE') {
+          const inv = (await accounts.listInvites()).find(i => i.id === id);
+          await accounts.revokeInvite(id);
+          await audit('invite-revoked', req, { actor: me, target: inv?.email ?? '' });
+          return reply(200, { ok: true });
+        }
         return reply(404, { error: 'Not found.' });
       }
 
@@ -246,6 +346,7 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
           system: {
             deviceProtected: d.protected, deviceLastSeen: d.lastSeen, lastReading: lastReading?.timestamp ?? null,
             telegram: alerts.getPublic().configured && alerts.getPublic().enabled, email: mailer.configured, node: process.version,
+            vaultKey: Boolean(process.env.VAULT_KEY),
           },
         });
       }
@@ -257,9 +358,19 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
         if (!req.headers.origin || foreignOrigin(req)) return reply(403, { error: 'Same-origin requests only.' });
         try {
           if (p === '/api/alerts/test') { await alerts.test((await jsonBody(req)).channel === 'ntfy' ? 'ntfy' : 'telegram'); return reply(200, { ok: true }); }
+          const before = JSON.stringify(alerts.getPublic());
           await alerts.update(await jsonBody(req));
+          // The dashboard also syncs limits on its own; only a real change goes in the log.
+          if (JSON.stringify(alerts.getPublic()) !== before) await audit('alerts-changed', req, { actor: me });
           return reply(200, alerts.getPublic());
         } catch (error) { return reply(error instanceof TooLarge ? 413 : 400, { error: error instanceof TooLarge ? 'Payload too large.' : error.message }); }
+      }
+      // An earlier period for comparison: averaged into at most `points` slices.
+      if (p === '/api/readings/range' && req.method === 'GET') {
+        const from = Number(url.searchParams.get('from')), to = Number(url.searchParams.get('to'));
+        const points = Math.min(600, Math.max(10, Number(url.searchParams.get('points')) || 300));
+        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 31 * 86400000) return reply(400, { error: 'bad-range' });
+        return reply(200, { readings: await store.readingsBetween(from, to, points) });
       }
       if (p === '/api/readings') {
         if (req.method === 'GET') {

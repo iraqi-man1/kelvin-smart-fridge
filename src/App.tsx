@@ -3,11 +3,12 @@ import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, CircleAlert, FileSpreadsheet,
   ExternalLink, Lock, Menu, Minus, PlugZap, RefreshCw, Moon, Search, Settings2, Sun, X,
 } from 'lucide-react';
-import { ScaleBar, StripChart } from './Charts';
+import { ScaleBar, StripChart, type Comparison } from './Charts';
+import { AuditPage } from './AuditPage';
 import { horizonFor } from './forecast';
 import {
   createDemoHistory, currencies, dateFormat, defaults, exceeds, fmt, formatEnergy, formatMoney, formatUptime, isAlert, limitFor,
-  metricInfo, metrics, nextDemoReading, sanitizeSettings, timeFormat,
+  demoRange, metricInfo, metrics, nextDemoReading, sanitizeSettings, timeFormat,
 } from './data';
 import { AccountPage, Avatar } from './Account';
 import { api, canManage, type Prefs, type User } from './accountApi';
@@ -61,6 +62,9 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   const [toast, setToast] = useState('');
   const [period, setPeriod] = useState(6);
   const [showForecast, setShowForecast] = useState(true);
+  // Compare the chart with an earlier period: the one just before, yesterday, or last week.
+  const [compareWith, setCompareWith] = useState<'off' | 'prev' | 'day' | 'week'>('off');
+  const [compareData, setCompareData] = useState<Reading[]>([]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [tablePage, setTablePage] = useState(0);
@@ -137,6 +141,18 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   const exceeded = latest ? metrics.filter(m => exceeds(m, latest[m], settings)) : [];
   const energy = useEnergy(readings, settings, now);
   const chartData = useMemo(() => readings.filter(r => r.timestamp >= now - period * 3600000), [readings, period, now]);
+  const compareOffset = compareWith === 'prev' ? period * 3600000 : compareWith === 'day' ? 86400000 : compareWith === 'week' ? 7 * 86400000 : 0;
+  // The earlier period is fetched again once a minute (it moves with "now"), not every second.
+  const minute = Math.floor(now / 60000);
+  useEffect(() => {
+    if (!compareOffset) { setCompareData([]); return; }
+    const to = minute * 60000 + 60000 - compareOffset, from = to - period * 3600000 - 60000;
+    if (mode === 'demo') { setCompareData(demoRange(from, to)); return; }
+    let live = true;
+    api.readingsRange(from, to, 300).then(r => { if (live) setCompareData(r); }).catch(() => { if (live) setCompareData([]); });
+    return () => { live = false; };
+  }, [compareOffset, period, minute, mode]);
+  const comparison = useMemo<Comparison | null>(() => compareOffset ? { data: compareData, offset: compareOffset, label: t.chart.cmpLabel[compareWith as 'prev' | 'day' | 'week'] } : null, [compareData, compareOffset, compareWith, t]);
   const today = useMemo(() => { const start = new Date(now); start.setHours(0, 0, 0, 0); return readings.filter(r => r.timestamp >= start.getTime()); }, [readings, now]);
   const alerts = useMemo(() => readings.filter((r, i) => isAlert(r, settings) && (i === 0 || !isAlert(readings[i - 1], settings))).slice(-30).reverse(), [readings, settings]);
   const unread = alerts.filter(a => a.timestamp > lastReadAlert).length;
@@ -253,15 +269,19 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
     </article>;
   })}</div>;
 
+  const compareOptions: (readonly ['off' | 'prev' | 'day' | 'week', string])[] = [['off', t.chart.cmp.off], ['prev', t.chart.cmp.prev], ...(period < 24 ? [['day', t.chart.cmp.day] as const] : []), ['week', t.chart.cmp.week]];
   const chart = <section className={`panel chart-panel ${page === 'sensors' ? 'span-all' : 'span-2'}`}>
     <header className="panel-head">
       <div><h2>{t.chart.title}</h2><p>{t.chart.sub}</p></div>
       <div className="chart-controls">
         <label className="fc-toggle"><input type="checkbox" checked={showForecast} onChange={e => setShowForecast(e.target.checked)}/>{t.chart.showForecast}</label>
-        <Segmented label={t.chart.period} value={String(period)} onChange={v => setPeriod(+v)} options={[['1', t.chart.h1], ['6', t.chart.h6], ['24', t.chart.h24]]}/>
+        <Segmented label={t.chart.period} value={String(period)} onChange={v => { setPeriod(+v); if (+v >= 24 && compareWith === 'day') setCompareWith('prev'); }} options={[['1', t.chart.h1], ['6', t.chart.h6], ['24', t.chart.h24]]}/>
+        <label className="cmp-select"><span>{t.chart.compare}</span>
+          <select value={compareWith} onChange={e => setCompareWith(e.target.value as typeof compareWith)}>{compareOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        </label>
       </div>
     </header>
-    <StripChart data={chartData} start={now - period * 3600000} end={now} settings={settings} horizon={showForecast ? horizonFor(period) : 0}/>
+    <StripChart data={chartData} start={now - period * 3600000} end={now} settings={settings} horizon={showForecast ? horizonFor(period) : 0} compare={comparison}/>
   </section>;
 
   const device = <section className="panel device-panel">
@@ -364,6 +384,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
 
       {page === 'system' && <SystemPage user={user} mode={mode}/>}
       {page === 'support' && <SupportPage user={user} notify={notify}/>}
+      {page === 'audit' && canManage(user) && <AuditPage/>}
 
       {(DATA_PAGES.includes(page) || page === 'system') && <section className={`status-strip ${status.tone}`} aria-label={t.status.aria}>
         <div><span>{t.status.source}</span><button className="source-button" onClick={openConnect}><i className={`dot ${mode === 'live' ? (connected ? 'on' : 'off') : 'demo'}`}/>{mode === 'demo' ? t.status.demo : t.status.live}</button></div>

@@ -135,3 +135,69 @@ Kelvin`;
 </div></body></html>`;
   return { subject: t.subject(by), text, html };
 }
+
+const SECURITY = {
+  ar: {
+    dir: 'rtl',
+    subject: { 'new-device': 'تسجيل دخول جديد إلى حسابك في Kelvin', locked: 'محاولات دخول فاشلة على حسابك في Kelvin' },
+    intro: {
+      'new-device': 'تم تسجيل الدخول إلى حسابك من جهاز أو متصفح لم يُستخدم من قبل.',
+      locked: 'حصلت عدة محاولات دخول بكلمة سر غلط على حسابك، فأوقفنا الدخول مؤقتاً لمدة 15 دقيقة.',
+    },
+    when: 'الوقت', browser: 'المتصفح', ip: 'عنوان IP',
+    advice: {
+      'new-device': 'إذا كنت أنت، فلا تحتاج تسوي شي. إذا ما كنت أنت، غيّر كلمة السر فوراً وفعّل التحقق بخطوتين.',
+      locked: 'إذا كنت أنت ونسيت كلمة السر، استخدم «نسيت كلمة السر». إذا ما كنت أنت، غيّر كلمة السر وفعّل التحقق بخطوتين.',
+    },
+    button: 'افتح Kelvin',
+  },
+  en: {
+    dir: 'ltr',
+    subject: { 'new-device': 'New sign-in to your Kelvin account', locked: 'Failed sign-in attempts on your Kelvin account' },
+    intro: {
+      'new-device': 'Your account was signed in to from a device or browser it has not used before.',
+      locked: 'Several sign-in attempts with a wrong password were made on your account, so sign-in is paused for 15 minutes.',
+    },
+    when: 'Time', browser: 'Browser', ip: 'IP address',
+    advice: {
+      'new-device': 'If this was you, there is nothing to do. If not, change your password now and turn on two-step sign-in.',
+      locked: 'If this was you and you forgot the password, use "Forgot password". If not, change your password and turn on two-step sign-in.',
+    },
+    button: 'Open Kelvin',
+  },
+  ms: {
+    dir: 'ltr',
+    subject: { 'new-device': 'Log masuk baharu ke akaun Kelvin anda', locked: 'Cubaan log masuk gagal pada akaun Kelvin anda' },
+    intro: {
+      'new-device': 'Akaun anda telah dilog masuk dari peranti atau pelayar yang belum pernah digunakan.',
+      locked: 'Beberapa cubaan log masuk dengan kata laluan salah telah dibuat, jadi log masuk dihentikan selama 15 minit.',
+    },
+    when: 'Masa', browser: 'Pelayar', ip: 'Alamat IP',
+    advice: {
+      'new-device': 'Jika ini anda, tiada apa perlu dibuat. Jika bukan, tukar kata laluan sekarang dan hidupkan log masuk dua langkah.',
+      locked: 'Jika ini anda dan terlupa kata laluan, gunakan "Lupa kata laluan". Jika bukan, tukar kata laluan dan hidupkan log masuk dua langkah.',
+    },
+    button: 'Buka Kelvin',
+  },
+};
+
+/** A security notice: a sign-in from a new device, or an account paused after failed attempts. */
+export function securityEmail({ kind, lang, name, when, browser, ip, link }) {
+  const t = SECURITY[lang] || SECURITY.ar;
+  const rows = [[t.when, when], [t.browser, browser], [t.ip, ip]].filter(([, v]) => v);
+  const text = `${name ? name + '\n\n' : ''}${t.intro[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${t.advice[kind]}\n\n${link ?? ''}\n\nKelvin`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f2f4;font-family:Segoe UI,Tahoma,Arial,sans-serif">
+<div dir="${t.dir}" style="max-width:460px;margin:0 auto;background:#fff;border:1px solid #e2e5e9;border-radius:12px;padding:28px;color:#161b22">
+<p style="margin:0 0 4px;font-weight:700;font-size:16px">Kelvin</p>
+${name ? `<p style="margin:0 0 6px;font-size:15px;font-weight:600">${escapeHtml(name)}</p>` : ''}
+<p style="margin:0 0 16px;color:#454d5a;font-size:14px;line-height:1.6">${t.intro[kind]}</p>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 16px;font-size:13.5px;background:#f7f8fa;border-radius:10px">
+${rows.map(([k, v]) => `<tr><td style="padding:8px 12px;color:#697281;width:38%">${k}</td><td dir="ltr" style="padding:8px 12px;color:#161b22">${escapeHtml(v)}</td></tr>`).join('\n')}
+</table>
+<p style="margin:0 0 20px;color:#454d5a;font-size:13.5px;line-height:1.6">${t.advice[kind]}</p>
+${link ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto"><tr><td bgcolor="#1f3b63" style="border-radius:10px">
+<a href="${escapeHtml(link)}" target="_blank" style="display:block;padding:12px 26px;border-radius:10px;background:#1f3b63;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;font-family:Segoe UI,Tahoma,Arial,sans-serif">${t.button}</a>
+</td></tr></table>` : ''}
+</div></body></html>`;
+  return { subject: t.subject[kind], text, html };
+}

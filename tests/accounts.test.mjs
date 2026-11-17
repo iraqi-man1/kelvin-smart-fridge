@@ -34,9 +34,19 @@ test('rejects bad sign-ups and wrong passwords with stable codes', async () => {
 test('locks a sign-in key after repeated failures', async () => {
   const a = fresh();
   await a.register({ name: 'A', email: 'a@x.io', password: '12345678' });
-  for (let i = 0; i < 10; i++) await assert.rejects(a.login({ email: 'a@x.io', password: 'nope-nope' }, 'ip1'));
+  // One address guessing across many accounts: stopped after 10.
+  for (let i = 0; i < 10; i++) await assert.rejects(a.login({ email: `guess${i}@x.io`, password: 'nope-nope' }, 'ip1'));
   await assert.rejects(a.login({ email: 'a@x.io', password: '12345678' }, 'ip1'), { code: 'too-many' });
   assert.ok(await a.login({ email: 'a@x.io', password: '12345678' }, 'ip2'));
+});
+
+test('locks an account after 5 wrong passwords from any address, and tells its owner once', async () => {
+  const locked = [];
+  const a = createAccounts({ dir: path.join(tmpdir(), `kelvin-accounts-${Math.random()}`), onLocked: async u => { locked.push(u.email); } });
+  await a.register({ name: 'A', email: 'a@x.io', password: '12345678' });
+  for (let i = 0; i < 5; i++) await assert.rejects(a.login({ email: 'a@x.io', password: 'nope-nope' }, `ip${i}`), { code: 'bad-credentials' });
+  await assert.rejects(a.login({ email: 'a@x.io', password: '12345678' }, 'ip-new'), { code: 'too-many' });
+  assert.deepEqual(locked, ['a@x.io']);
 });
 
 test('updates the profile, changes the password and signs out other sessions', async () => {

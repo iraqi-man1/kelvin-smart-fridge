@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, CircleAlert, Copy, Download, Eye, EyeOff, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Check, CircleAlert, Copy, Download, Eye, EyeOff, KeyRound, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { api, canManage, type DeviceStatus, type User } from './accountApi';
-import { fmt, metricInfo, metrics } from './data';
+import { dateFormat, fmt, metricInfo, metrics, timeFormat } from './data';
 import { useT } from './i18n';
 import { Secret, SecretBlock, SecretInput } from './ui';
 import type { Reading } from './types';
@@ -146,7 +146,7 @@ void loop() {
 type Props = { apiUrl: string; user: User; onShowLive: () => void; notify: (m: string) => void };
 
 export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const c = t.cn;
   const [step, setStep] = useState(0);
   const [ssid, setSsid] = useState('');
@@ -161,6 +161,15 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
   const [keyState, setKeyState] = useState<DeviceStatus | null>(null);
   const admin = canManage(user);
   useEffect(() => { if (admin) api.device().then(setKeyState).catch(() => {}); }, [admin]);
+  // Replacing a key: the new one goes into the code; the old one keeps working until the
+  // device first sends with the new key, or for a day at most.
+  async function rotateKey(id: string) {
+    if (!confirm(t.keys.rotateConfirm)) return;
+    const r = await api.rotateKey(id);
+    setDeviceKey(r.key);
+    setKeyState(await api.device());
+    notify(t.keys.rotated);
+  }
   async function createKey() {
     const r = await api.createKey(t.keys.label);
     setDeviceKey(r.key);
@@ -243,6 +252,9 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
           {deviceKey && <code className="endpoint" dir="ltr"><Secret label={t.keys.title}>{deviceKey}</Secret></code>}
           {keyState && keyState.keys.length > 0 && <ul className="key-list">{keyState.keys.map(k => <li key={k.id}>
             <KeyRound size={14}/><span>{k.label}</span><span className="mono muted" dir="ltr">…{k.hint}</span>
+            {k.retireAt ? <span className="key-retiring">{t.keys.retiring(`${dateFormat(k.retireAt, lang)} ${timeFormat(k.retireAt)}`)}</span>
+              : k.replaces ? <span className="key-new">{t.keys.waiting}</span>
+              : <button type="button" className="text-button" onClick={() => rotateKey(k.id)}><RefreshCw size={13}/>{t.keys.rotate}</button>}
             <button type="button" className="text-button" onClick={() => api.revokeKey(k.id).then(s => { setKeyState(s); notify(t.keys.removed); })}>{t.keys.remove}</button>
           </li>)}</ul>}
           {!deviceKey && <button type="button" className="button primary" onClick={createKey}><KeyRound size={15}/>{t.keys.create}</button>}

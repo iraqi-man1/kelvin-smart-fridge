@@ -34,7 +34,7 @@ test('failed sign-ins count across server copies', async () => {
   const store = await shared();
   const first = createAccounts({ store });
   await first.register({ name: 'Ali', email: 'lock@example.test', password: 'account-pass' });
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 5; i++) {
     const copy = createAccounts({ store });
     await assert.rejects(copy.login({ email: 'lock@example.test', password: 'wrong' }, 'ip9'), { code: 'bad-credentials' });
   }

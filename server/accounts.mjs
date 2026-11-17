@@ -23,7 +23,8 @@ export const can = (user, action) => ({
   view: Boolean(user),
 })[action] ?? false;
 const INVITE_DAYS = 7;
-const FAIL_LIMIT = 10, FAIL_WINDOW = 15 * 60000;
+// Wrong passwords: 10 from one address, or 5 on one account, pause sign-in for 15 minutes.
+const FAIL_LIMIT = 10, ACCOUNT_LIMIT = 5, FAIL_WINDOW = 15 * 60000;
 // Email codes: 6 digits, 10 minutes, 5 tries, one new email a minute, 5 emails per code.
 const OTP_TTL = 10 * 60000, OTP_TRIES = 5, OTP_RESEND = 60000, OTP_SENDS = 5;
 const LANGS = ['ar', 'en', 'ms'];
@@ -55,25 +56,44 @@ function imageType(buf) {
  * Accounts keep a copy of users and sessions in memory for fast look-ups, and write each
  * change straight to the store (PostgreSQL or the JSON files, see store.mjs).
  */
-export function createAccounts({ store, dir, now = Date.now, mailer = notConfigured, vaultKey = 'kelvin-local' }) {
+export function createAccounts({ store, dir, now = Date.now, mailer = notConfigured, vaultKey = 'kelvin-local', oldVaultKeys = [], onLocked = async () => {} }) {
   // Passwords an admin sets (by invitation or by changing it) are also kept encrypted
   // (AES-256-GCM, key from VAULT_KEY or the database address) so the admin can look them up.
   // A password the user chooses themselves is never kept: only its scrypt hash, as always.
-  const key = createHash('sha256').update(`kelvin-password-vault:${vaultKey}`).digest();
+  const keyFor = k => createHash('sha256').update(`kelvin-password-vault:${k}`).digest();
+  const key = keyFor(vaultKey);
+  // Keys used before (for example before VAULT_KEY was set): still read, then re-sealed with the new key.
+  const oldKeys = oldVaultKeys.filter(k => k && k !== vaultKey).map(keyFor);
   const seal = text => {
     const iv = randomBytes(12);
     const c = createCipheriv('aes-256-gcm', key, iv);
     const enc = Buffer.concat([c.update(text, 'utf8'), c.final()]);
     return [iv, c.getAuthTag(), enc].map(b => b.toString('base64url')).join('.');
   };
-  const unseal = s => {
+  const open = (s, k) => {
     try {
       const [iv, tag, enc] = s.split('.').map(x => Buffer.from(x, 'base64url'));
-      const d = createDecipheriv('aes-256-gcm', key, iv);
+      const d = createDecipheriv('aes-256-gcm', k, iv);
       d.setAuthTag(tag);
       return Buffer.concat([d.update(enc), d.final()]).toString('utf8');
     } catch { return null; }
   };
+  const unseal = s => open(s, key);
+  /** Re-seals entries made with an old key, so the old key can be dropped later. */
+  async function rewrapVault() {
+    if (!oldKeys.length) return 0;
+    const v = await loadVault();
+    let changed = 0;
+    for (const entry of Object.values(v)) {
+      if (!entry?.sealed || unseal(entry.sealed) !== null) continue;
+      for (const k of oldKeys) {
+        const text = open(entry.sealed, k);
+        if (text !== null) { entry.sealed = seal(text); changed++; break; }
+      }
+    }
+    if (changed) await store.setSetting('password_vault', v);
+    return changed;
+  }
   const loadVault = async () => (await store.getSetting('password_vault')) ?? {};
   /** entry: { sealed, at, by, self } — sealed is null when the user chose the password. */
   async function remember(userId, entry) {
@@ -108,6 +128,7 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
   }
   const ready = Promise.all([
     loadState(),
+    rewrapVault().catch(e => console.error('[vault]', e.message)),
     store.loadUsers().then(async v => {
       users = v;
       // Accounts made before roles existed: the oldest becomes admin, the rest members.
@@ -242,12 +263,21 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
       await ready;
       limit(key);
       const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
+      // Also per account, so guessing from many addresses is stopped too.
+      const accountKey = `account:${email}`;
+      const f = failures.get(accountKey);
+      if (f && now() - f.since < FAIL_WINDOW && f.count >= ACCOUNT_LIMIT) throw new AccountError('too-many', 429);
       const user = users.find(u => u.email === email);
       // Same answer and similar work whether the email exists or not.
       const ok = user ? await checkPassword(String(input?.password ?? ''), user.password)
         : (await hashPassword(String(input?.password ?? '')), false);
-      if (!ok) { fail(key); throw new AccountError('bad-credentials', 401); }
-      failures.delete(key);
+      if (!ok) {
+        fail(key); fail(accountKey);
+        // The moment the account is paused, its owner hears about it (once per pause).
+        if (user && failures.get(accountKey).count === ACCOUNT_LIMIT) await onLocked(user).catch(() => {});
+        throw new AccountError('bad-credentials', 401);
+      }
+      failures.delete(key); failures.delete(accountKey);
       // Two-step sign-in: the password was right, now a code goes to the user's email.
       if (user.otpEmail) return { otp: await issue(user, 'login', input?.lang) };
       return { user: publicUser(user), token: await newSession(user) };

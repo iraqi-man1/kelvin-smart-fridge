@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 
 const sha256 = s => createHash('sha256').update(s).digest('hex');
 const KEEP_COMMANDS = 30;
+const ROTATE_GRACE = 24 * 3600000;
 const SEEN_EVERY = 60000; // "key last used" is saved at most once a minute
 
 /**
@@ -55,9 +56,17 @@ export function createDevice({ store, now = Date.now }) {
       const given = String(headers['x-device-key'] ?? (headers.authorization ?? '').replace(/^Bearer\s+/i, '')).trim();
       if (!given) return { ok: false };
       const hash = Buffer.from(sha256(given));
+      const t = now();
+      // A replaced key keeps working for a day (time to upload the new code), then stops.
+      if (keys.some(k => k.retireAt && k.retireAt <= t)) { keys = keys.filter(k => !k.retireAt || k.retireAt > t); await saveKeys(); }
       const key = keys.find(k => timingSafeEqual(Buffer.from(k.hash), hash));
       if (!key) return { ok: false };
-      const t = now();
+      // The first reading with a new key ends the old one at once.
+      if (key.replaces && keys.some(k => k.id === key.replaces)) {
+        keys = keys.filter(k => k.id !== key.replaces);
+        delete key.replaces;
+        await saveKeys();
+      }
       lastSeen = t;
       await store.setSetting('device_seen', t);
       if (!key.lastUsed || t - key.lastUsed > SEEN_EVERY) { key.lastUsed = t; await saveKeys(); }
@@ -71,6 +80,22 @@ export function createDevice({ store, now = Date.now }) {
       keys = [...keys, entry];
       await saveKeys();
       return { key, entry: publicKey(entry) };
+    },
+
+    /**
+     * Replaces a key: a new key is made now, and the old one keeps working until the device
+     * first uses the new one, or for 24 hours at most. The new key is shown once.
+     */
+    async rotateKey(id, by) {
+      await ready;
+      const old = keys.find(k => k.id === id);
+      if (!old) throw new DeviceError('no-key', 404);
+      const key = `kv_${randomBytes(18).toString('base64url')}`;
+      const entry = { id: randomUUID(), label: old.label, hash: sha256(key), hint: key.slice(-4), createdAt: now(), by, lastUsed: null, replaces: old.id };
+      old.retireAt = now() + ROTATE_GRACE;
+      keys = [...keys, entry];
+      await saveKeys();
+      return { key, entry: publicKey(entry), old: publicKey(old) };
     },
 
     async revokeKey(id) { await ready; keys = keys.filter(k => k.id !== id); await saveKeys(); },

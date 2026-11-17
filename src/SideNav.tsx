@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { Bell, BookOpen, ChevronDown, Cpu, LayoutGrid, LifeBuoy, List, MonitorSmartphone, PlugZap, Send, ShieldCheck, Users, Workflow, Zap, CircleHelp } from 'lucide-react';
+import { Bell, BookOpen, ChevronDown, Cpu, LayoutGrid, LifeBuoy, List, MonitorSmartphone, PlugZap, Send, ShieldCheck, Users, Workflow, Zap, CircleHelp, ScrollText } from 'lucide-react';
 import { useT } from './i18n';
 import type { Page } from './types';
 
@@ -18,7 +18,7 @@ export function SideNav({ page, admin, unread, onGo }: { page: Page; admin: bool
   const groups: Group[] = [
     { id: 'monitor', icon: LayoutGrid, items: [['overview', LayoutGrid], ['energy', Zap], ['sensors', Cpu], ['history', List], ['alerts', Bell]] },
     { id: 'device', icon: MonitorSmartphone, items: [['connect', PlugZap]] },
-    ...(admin ? [{ id: 'admin', icon: ShieldCheck, items: [['users', Users], ['telegram', Send]] } as Group] : []),
+    ...(admin ? [{ id: 'admin', icon: ShieldCheck, items: [['users', Users], ['telegram', Send], ['audit', ScrollText]] } as Group] : []),
     { id: 'help', icon: CircleHelp, items: [['system', Workflow], ['guide', BookOpen], ['support', LifeBuoy]] },
   ];
   const holding = groups.find(g => g.items.some(([id]) => id === page))?.id;

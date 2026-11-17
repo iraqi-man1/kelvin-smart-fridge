@@ -5,6 +5,7 @@ import { useT } from './i18n';
 import type { Metric, Reading, Settings } from './types';
 
 const clamp = (v: number) => Math.min(100, Math.max(0, v));
+const signed = (v: number, digits: number) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(digits)}`;
 
 export function niceStep(range: number, count: number) {
   const raw = range / count, pow = 10 ** Math.floor(Math.log10(raw)), n = raw / pow;
@@ -31,8 +32,13 @@ export function timeTicks(start: number, end: number) {
   return ticks;
 }
 
+/** An earlier period drawn over this one: its readings and how far back it is (ms). */
+export type Comparison = { data: Reading[]; offset: number; label: string };
+
+const mean = (list: Reading[], m: Metric) => list.length ? list.reduce((a, r) => a + r[m], 0) / list.length : undefined;
+
 /** One row per measurement, sharing a time axis and a single cursor. */
-export function StripChart({ data, start, end, settings, horizon = 0 }: { data: Reading[]; start: number; end: number; settings: Settings; horizon?: number }) {
+export function StripChart({ data, start, end, settings, horizon = 0, compare = null }: { data: Reading[]; start: number; end: number; settings: Settings; horizon?: number; compare?: Comparison | null }) {
   const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
@@ -54,6 +60,18 @@ export function StripChart({ data, start, end, settings, horizon = 0 }: { data: 
   const plotW = width - padL - padR;
   const x = (t: number) => padL + (t - start) / (axisEnd - start) * plotW;
   const aheadLabel = t.chart.ahead(Math.round(horizon / 60000));
+  // The earlier period, moved forward onto this period's time axis.
+  const before = useMemo(() => compare ? compare.data.map(r => ({ ...r, timestamp: r.timestamp + compare.offset })).filter(r => r.timestamp >= start && r.timestamp <= end) : [], [compare, start, end]);
+  const beforeGap = useMemo(() => {
+    if (before.length < 2) return 600000;
+    const steps = before.slice(1).map((r, i) => r.timestamp - before[i].timestamp).sort((a, b) => a - b);
+    return Math.max(600000, steps[Math.floor(steps.length / 2)] * 3);
+  }, [before]);
+  const beforeAt = (tm: number) => {
+    let best: Reading | null = null;
+    for (const r of before) if (!best || Math.abs(r.timestamp - tm) < Math.abs(best.timestamp - tm)) best = r;
+    return best && Math.abs(best.timestamp - tm) <= beforeGap ? best : null;
+  };
   const latest = data.at(-1);
   const future = Boolean(hover && !hover.r);
   const shown = hover ? hover.r : latest ?? null;
@@ -78,7 +96,7 @@ export function StripChart({ data, start, end, settings, horizon = 0 }: { data: 
     {metrics.map(metric => {
       const info = metricInfo[metric];
       const fc = forecasts?.[metric] ?? null;
-      const domain = domainFor([...data.map(r => r[metric]), ...(fc ? fc.points.flatMap(p => [p.v, p.lo, p.hi]) : [])]);
+      const domain = domainFor([...data.map(r => r[metric]), ...before.map(r => r[metric]), ...(fc ? fc.points.flatMap(p => [p.v, p.lo, p.hi]) : [])]);
       const y = (v: number) => bottom - (v - domain.min) / (domain.max - domain.min) * (bottom - top);
       const limit = limitFor(metric, settings);
       const limitVisible = data.length > 0 && limit >= domain.min && limit <= domain.max;
@@ -89,12 +107,26 @@ export function StripChart({ data, start, end, settings, horizon = 0 }: { data: 
       const last = fc?.points.at(-1);
       const band = fc ? `${smoothPath(fc.points.map(p => [x(p.t), y(p.hi)]))}${smoothPath(fc.points.slice().reverse().map(p => [x(p.t), y(p.lo)]), false)}Z` : '';
       const line = fc ? smoothPath(fc.points.map(p => [x(p.t), y(p.v)])) : '';
+      const beforePath = before.map((r, i) => `${i && r.timestamp - before[i - 1].timestamp < beforeGap ? 'L' : 'M'}${x(r.timestamp).toFixed(1)},${y(r[metric]).toFixed(1)}`).join('');
+      const avgNow = mean(data, metric), avgThen = mean(before, metric);
+      const diff = avgNow !== undefined && avgThen !== undefined ? avgNow - avgThen : undefined;
+      const thenAtCursor = hover && !future ? beforeAt(hover.t) : null;
+      const pct = diff !== undefined && avgThen ? diff / Math.abs(avgThen) * 100 : undefined;
       return <div className="strip-row" key={metric}>
         <div className="strip-head" dir={t.dir}>
           <span className="strip-name"><i className="swatch" style={{ background: info.color }}/>{t.metric[metric].name}<small dir="ltr">{info.unit}</small></span>
           <span className="strip-limit">{t.chart.maxLimit} <span className="mono" dir="ltr">{limit}</span></span>
           <b className={`strip-value mono ${value !== undefined && exceeds(metric, value, settings) ? 'over' : ''} ${future ? 'is-forecast' : ''}`} dir="ltr">{future && value !== undefined ? '≈ ' : ''}{fmt(metric, value)}</b>
         </div>
+        {compare && <div className="strip-compare" dir={t.dir}>
+          {hover && !future
+            ? <><span>{compare.label}</span><b className="mono" dir="ltr">{thenAtCursor ? fmt(metric, thenAtCursor[metric]) : '—'}</b>
+              {thenAtCursor && hover.r && <span className={`cmp-diff ${hover.r[metric] > thenAtCursor[metric] ? 'up' : hover.r[metric] < thenAtCursor[metric] ? 'down' : ''}`} dir="ltr">{signed(hover.r[metric] - thenAtCursor[metric], info.digits)}</span>}</>
+            : <><span>{t.chart.avgNow}</span><b className="mono" dir="ltr">{fmt(metric, avgNow)}</b>
+              <span>{t.chart.avgThen(compare.label)}</span><b className="mono" dir="ltr">{fmt(metric, avgThen)}</b>
+              {diff !== undefined && <span className={`cmp-diff ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}`} dir="ltr">{signed(diff, info.digits)}{pct !== undefined && Math.abs(pct) >= 0.5 ? ` (${signed(pct, 0)}%)` : ''}</span>}
+              {!before.length && <span className="muted">{t.chart.cmpEmpty}</span>}</>}
+        </div>}
         {fc && last && <div className="strip-forecast" dir={t.dir}>
           <span className="fc-label">{t.chart.forecastIn(aheadLabel)}</span>
           <b className="mono" dir="ltr">{fmt(metric, last.v)}</b>
@@ -115,6 +147,8 @@ export function StripChart({ data, start, end, settings, horizon = 0 }: { data: 
             <path d={line} fill="none" stroke={info.color} className="fc-line"/>
             {last && <circle cx={x(last.t)} cy={y(last.v)} r="3" fill="var(--surface)" stroke={info.color} strokeWidth="1.5"/>}
           </>}
+          {before.length > 1 && <path d={beforePath} fill="none" stroke={info.color} className="cmp-line"/>}
+          {thenAtCursor && <circle cx={x(thenAtCursor.timestamp)} cy={y(thenAtCursor[metric])} r="3.5" fill="var(--surface)" stroke={info.color} strokeWidth="1.5"/>}
           {data.length === 1
             ? <circle cx={x(data[0].timestamp)} cy={y(data[0][metric])} r="4" fill={info.color}/>
             : <path d={path} fill="none" stroke={info.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
@@ -133,7 +167,10 @@ export function StripChart({ data, start, end, settings, horizon = 0 }: { data: 
         <text x={x(tk)} y={17} textAnchor="middle">{shortTime(tk)}</text>
       </g>)}
     </svg>
-    {showFuture && <p className="fc-legend" dir={t.dir}><i aria-hidden="true"/>{t.chart.legend(aheadLabel)}</p>}
+    {(showFuture || compare) && <div className="chart-legends" dir={t.dir}>
+      {compare && <p className="cmp-legend"><i className="now" aria-hidden="true"/>{t.chart.thisPeriod}<i className="then" aria-hidden="true"/>{compare.label}</p>}
+      {showFuture && <p className="fc-legend"><i aria-hidden="true"/>{t.chart.legend(aheadLabel)}</p>}
+    </div>}
     {!data.length && <div className="chart-empty" dir={t.dir}>{t.chart.empty}</div>}
   </div>;
 }

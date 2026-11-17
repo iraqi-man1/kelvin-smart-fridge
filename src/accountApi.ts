@@ -7,7 +7,7 @@ export type User = {
 };
 
 /** A code was emailed: `challenge` names it, `email` is the masked address, `resendIn` in seconds. */
-import type { Lang, Settings } from './types';
+import type { Lang, Reading, Settings } from './types';
 
 /** What the account keeps on the server, so it follows the user to any browser. */
 export type Prefs = {
@@ -21,7 +21,12 @@ export const canControl = (u: User) => u.role === 'admin' || u.role === 'member'
 
 export type Invite = { id: string; role: Role; email: string; name: string; expires: number; createdAt: number; by: string };
 export type InvitePreview = { email: string; name: string; role: Role; by: string; expires: number };
-export type DeviceKey = { id: string; label: string; hint: string; createdAt: number; by: string; lastUsed: number | null };
+export type DeviceKey = { id: string; label: string; hint: string; createdAt: number; by: string; lastUsed: number | null; retireAt?: number; replaces?: string };
+/** One line of the security log (admin only). */
+export type AuditEntry = {
+  id: string; at: number; action: string; ip: string; browser: string; detail: string;
+  actor: { id?: string; name: string; email?: string } | null; target: { id?: string; name: string; email?: string } | null;
+};
 export type Command = { id: string; type: 'beep' | 'led' | 'message' | 'interval' | 'reboot'; value: unknown; by: string; createdAt: number; status: 'pending' | 'sent' | 'done' | 'cancelled' };
 export type DeviceStatus = { protected: boolean; keys: DeviceKey[]; lastSeen: number | null; commands: Command[] };
 
@@ -85,6 +90,10 @@ export const api = {
   cancelCommand: (id: string) => call<DeviceStatus>(`/api/device/commands/${id}`, 'DELETE'),
   createKey: (label: string) => call<{ key: string; entry: DeviceKey }>('/api/device/keys', 'POST', { label }),
   revokeKey: (id: string) => call<DeviceStatus>(`/api/device/keys/${id}`, 'DELETE'),
+  rotateKey: (id: string) => call<{ key: string; entry: DeviceKey; old: DeviceKey }>(`/api/device/keys/${id}/rotate`, 'POST', {}),
+  audit: () => call<{ entries: AuditEntry[] }>('/api/admin/audit').then(b => b.entries),
+  /** Readings of an earlier period, averaged into at most `points` slices (for comparison). */
+  readingsRange: (from: number, to: number, points = 300) => call<{ readings: Reading[] }>(`/api/readings/range?from=${Math.round(from)}&to=${Math.round(to)}&points=${points}`).then(b => b.readings),
   savePrefs: (patch: Prefs) => call<{ user: User }>('/api/me/prefs', 'PUT', patch).then(b => b.user),
   resetRequest: (email: string, lang: string) => call<{ otp: Otp }>('/api/auth/reset/request', 'POST', { email, lang }).then(b => b.otp),
   resetConfirm: (challenge: string, code: string, password: string) => call<{ user: User }>('/api/auth/reset/confirm', 'POST', { challenge, code, password }).then(b => b.user),

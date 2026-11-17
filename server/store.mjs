@@ -11,9 +11,29 @@ import path from 'node:path';
  *   users:      loadUsers(), saveUser(user), deleteUser(id)
  *   sessions:   loadSessions(), saveSession(s), deleteSession(hash), deleteUserSessions(userId, exceptHash)
  *   photos:     getAvatar(userId), putAvatar(userId, type, bytes), deleteAvatar(userId)
- *   readings:   insertReading(r), recentReadings(limit), readingsSince(ts, limit), countReadings()
+ *   readings:   insertReading(r), recentReadings(limit), readingsSince(ts, limit), readingsBetween(from, to, points), countReadings()
  *   settings:   getSetting(key), setSetting(key, value)
  */
+
+/**
+ * Readings between two times, averaged into at most `points` equal time slices, so a long
+ * period (a week ago, for comparison) comes back small. Empty slices are left out.
+ */
+export function bucketReadings(list, from, to, points) {
+  const size = Math.max(1, (to - from) / points);
+  const slots = new Map();
+  for (const r of list) {
+    if (r.timestamp < from || r.timestamp > to) continue;
+    const b = Math.min(points - 1, Math.floor((r.timestamp - from) / size));
+    const s = slots.get(b) ?? { t: 0, temperature: 0, humidity: 0, eco2: 0, tvoc: 0, n: 0 };
+    s.t += r.timestamp; s.temperature += r.temperature; s.humidity += r.humidity; s.eco2 += r.eco2; s.tvoc += r.tvoc; s.n++;
+    slots.set(b, s);
+  }
+  return [...slots.entries()].sort((a, b) => a[0] - b[0]).map(([b, s]) => ({
+    id: `avg-${b}`, timestamp: Math.round(s.t / s.n), deviceId: 'avg', samples: s.n,
+    temperature: s.temperature / s.n, humidity: s.humidity / s.n, eco2: s.eco2 / s.n, tvoc: s.tvoc / s.n,
+  }));
+}
 
 const KEEP_IN_FILE = 2000; // the JSON store keeps a rolling window; Postgres keeps everything
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
@@ -70,6 +90,7 @@ export function createJsonStore(dir, { readingsFile = path.join(dir, 'readings.j
     async insertReading(r) { await ready; readings = [...readings, r].slice(-KEEP_IN_FILE); await write(readingsFile, readings); },
     async recentReadings(limit) { await ready; return readings.slice(-limit); },
     async readingsSince(ts, limit) { await ready; return readings.filter(r => r.timestamp > ts).slice(-limit); },
+    async readingsBetween(from, to, points) { await ready; return bucketReadings(readings, from, to, points); },
     async countReadings() { await ready; return readings.length; },
     async getSetting(key) { await ready; return settings[key] ?? null; },
     async setSetting(key, value) { await ready; settings = { ...settings, [key]: value }; await write(files.settings, settings); },
@@ -220,6 +241,15 @@ export async function createPostgresStore({ query, close = async () => {} }) {
     async readingsSince(ts, limit) {
       const rows = (await query('select * from kelvin_readings where ts > $1 order by ts desc limit $2', [ts, limit])).rows;
       return rows.map(readingFromRow).reverse();
+    },
+    async readingsBetween(from, to, points) {
+      const size = Math.max(1, Math.ceil((to - from) / points));
+      const rows = (await query(`select floor((ts - $1) / $3) as b, avg(ts) as ts, avg(temperature) as temperature, avg(humidity) as humidity,
+        avg(eco2) as eco2, avg(tvoc) as tvoc, count(*) as n from kelvin_readings where ts between $1 and $2 group by b order by b`, [from, to, size])).rows;
+      return rows.map(r => ({
+        id: `avg-${r.b}`, timestamp: Math.round(Number(r.ts)), deviceId: 'avg', samples: Number(r.n),
+        temperature: Number(r.temperature), humidity: Number(r.humidity), eco2: Number(r.eco2), tvoc: Number(r.tvoc),
+      }));
     },
     async countReadings() { return Number((await query('select count(*) as n from kelvin_readings')).rows[0].n); },
     async getSetting(key) { return (await query('select value from kelvin_settings where key = $1', [key])).rows[0]?.value ?? null; },

@@ -28,7 +28,7 @@ export type Settings = {
 
 export type Metric = 'temperature' | 'humidity' | 'eco2' | 'tvoc';
 export type Page = 'overview' | 'energy' | 'sensors' | 'history' | 'alerts' | 'account' | 'users' | 'system'
-  | 'settings' | 'telegram' | 'connect' | 'guide' | 'support';
+  | 'settings' | 'telegram' | 'connect' | 'guide' | 'support' | 'audit';
 export type Lang = 'ar' | 'en' | 'ms';
 export type Currency = 'MYR' | 'USD' | 'IQD';
 
