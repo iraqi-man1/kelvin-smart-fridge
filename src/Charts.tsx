@@ -1,0 +1,161 @@
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { forecast, forecastAt, smoothPath, type Forecast } from './forecast';
+import { exceeds, fmt, limitFor, metricInfo, metrics, shortTime, timeFormat } from './data';
+import { useT } from './i18n';
+import type { Metric, Reading, Settings } from './types';
+
+const clamp = (v: number) => Math.min(100, Math.max(0, v));
+
+export function niceStep(range: number, count: number) {
+  const raw = range / count, pow = 10 ** Math.floor(Math.log10(raw)), n = raw / pow;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * pow;
+}
+
+function domainFor(values: number[]) {
+  if (!values.length) return { min: 0, max: 1, ticks: [] as number[] };
+  let lo = Math.min(...values), hi = Math.max(...values);
+  if (hi - lo < 2) { lo -= 1; hi += 1; }
+  const step = niceStep(hi - lo, 3);
+  const min = Math.floor(lo / step) * step, max = Math.ceil(hi / step) * step;
+  const ticks: number[] = [];
+  for (let v = min; v <= max + step / 2; v += step) ticks.push(+v.toFixed(2));
+  return { min, max, ticks };
+}
+
+export function timeTicks(start: number, end: number) {
+  const span = end - start;
+  const step = span <= 3600000 ? 600000 : span <= 6 * 3600000 ? 3600000 : 4 * 3600000;
+  const offset = new Date(start).getTimezoneOffset() * 60000;
+  const ticks: number[] = [];
+  for (let t = Math.ceil((start - offset) / step) * step + offset; t <= end; t += step) ticks.push(t);
+  return ticks;
+}
+
+/** One row per measurement, sharing a time axis and a single cursor. */
+export function StripChart({ data, start, end, settings, horizon = 0 }: { data: Reading[]; start: number; end: number; settings: Settings; horizon?: number }) {
+  const { t } = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(640);
+  // The point under the mouse: a reading, or (past the last reading) a time in the forecast.
+  const [hover, setHover] = useState<{ t: number; r: Reading | null } | null>(null);
+  useEffect(() => {
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(240, Math.floor(entry.contentRect.width))));
+    observer.observe(ref.current!);
+    return () => observer.disconnect();
+  }, []);
+  // Clear the cursor only when the period changes, not on every clock tick.
+  useEffect(() => setHover(null), [end - start]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // With a forecast, the time axis runs on past "now" into a shaded future zone.
+  const forecasts = useMemo(() => horizon ? Object.fromEntries(metrics.map(m => [m, forecast(data, m, horizon, settings)])) as Record<Metric, Forecast | null> : null, [data, horizon, settings]);
+  const showFuture = Boolean(forecasts && Object.values(forecasts).some(Boolean));
+  const axisEnd = showFuture ? end + horizon : end;
+  const padL = 46, padR = 14, rowH = 84, top = 8, bottom = rowH - 10;
+  const plotW = width - padL - padR;
+  const x = (t: number) => padL + (t - start) / (axisEnd - start) * plotW;
+  const aheadLabel = t.chart.ahead(Math.round(horizon / 60000));
+  const latest = data.at(-1);
+  const future = Boolean(hover && !hover.r);
+  const shown = hover ? hover.r : latest ?? null;
+
+  function onMove(event: PointerEvent<HTMLDivElement>) {
+    if (!data.length) return;
+    const px = event.clientX - ref.current!.getBoundingClientRect().left;
+    // Same scale as x(): the axis runs to the end of the forecast when one is shown.
+    const target = Math.min(axisEnd, Math.max(start, start + (px - padL) / plotW * (axisEnd - start)));
+    const lastT = data.at(-1)!.timestamp;
+    if (showFuture && target > lastT && x(target) - x(lastT) > 4) { setHover({ t: target, r: null }); return; }
+    let closest = data[0];
+    for (const r of data) if (Math.abs(r.timestamp - target) < Math.abs(closest.timestamp - target)) closest = r;
+    setHover({ t: closest.timestamp, r: closest });
+  }
+
+  return <div className="strip-chart" ref={ref} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
+    <div className="strip-cursor" dir={t.dir}>
+      <span>{future ? t.chart.forecastAt : hover ? t.chart.atCursor : t.chart.latest}</span>
+      <b className="mono">{hover ? timeFormat(hover.t) : shown ? timeFormat(shown.timestamp) : '—'}</b>
+    </div>
+    {metrics.map(metric => {
+      const info = metricInfo[metric];
+      const fc = forecasts?.[metric] ?? null;
+      const domain = domainFor([...data.map(r => r[metric]), ...(fc ? fc.points.flatMap(p => [p.v, p.lo, p.hi]) : [])]);
+      const y = (v: number) => bottom - (v - domain.min) / (domain.max - domain.min) * (bottom - top);
+      const limit = limitFor(metric, settings);
+      const limitVisible = data.length > 0 && limit >= domain.min && limit <= domain.max;
+      // Break the line where the device was silent, rather than drawing through the gap.
+      const path = data.map((r, i) => `${i && r.timestamp - data[i - 1].timestamp < 600000 ? 'L' : 'M'}${x(r.timestamp).toFixed(1)},${y(r[metric]).toFixed(1)}`).join('');
+      const ahead = future && fc && hover ? forecastAt(fc, Math.min(hover.t, fc.points.at(-1)!.t)) : null;
+      const value = future ? ahead?.v : shown?.[metric];
+      const last = fc?.points.at(-1);
+      const band = fc ? `${smoothPath(fc.points.map(p => [x(p.t), y(p.hi)]))}${smoothPath(fc.points.slice().reverse().map(p => [x(p.t), y(p.lo)]), false)}Z` : '';
+      const line = fc ? smoothPath(fc.points.map(p => [x(p.t), y(p.v)])) : '';
+      return <div className="strip-row" key={metric}>
+        <div className="strip-head" dir={t.dir}>
+          <span className="strip-name"><i className="swatch" style={{ background: info.color }}/>{t.metric[metric].name}<small dir="ltr">{info.unit}</small></span>
+          <span className="strip-limit">{t.chart.maxLimit} <span className="mono" dir="ltr">{limit}</span></span>
+          <b className={`strip-value mono ${value !== undefined && exceeds(metric, value, settings) ? 'over' : ''} ${future ? 'is-forecast' : ''}`} dir="ltr">{future && value !== undefined ? '≈ ' : ''}{fmt(metric, value)}</b>
+        </div>
+        {fc && last && <div className="strip-forecast" dir={t.dir}>
+          <span className="fc-label">{t.chart.forecastIn(aheadLabel)}</span>
+          <b className="mono" dir="ltr">{fmt(metric, last.v)}</b>
+          <span className="mono muted" dir="ltr">({fmt(metric, last.lo)}–{fmt(metric, last.hi)})</span>
+          <span className={`fc-trend ${fc.slopePerHour > 0 ? 'up' : fc.slopePerHour < 0 ? 'down' : ''}`}>{fc.slopePerHour === 0 ? t.chart.steady : t.chart.perHour(`${fc.slopePerHour > 0 ? '+' : ''}${fc.slopePerHour.toFixed(info.digits ? 1 : 0)}`)}</span>
+          {fc.crossesAt && <span className="fc-warn">{t.chart.mayCross(Math.max(1, Math.round((fc.crossesAt - data.at(-1)!.timestamp) / 60000)))}</span>}
+          {!fc.reliable && <span className="fc-rough">{t.chart.rough}</span>}
+        </div>}
+        <svg width={width} height={rowH} role="img" aria-label={t.chart.aria(t.metric[metric].name)}>
+          {domain.ticks.map(t => <g key={t}>
+            <line className="grid" x1={padL} x2={width - padR} y1={y(t)} y2={y(t)}/>
+            <text className="tick" x={padL - 8} y={y(t) + 4} textAnchor="end">{t}</text>
+          </g>)}
+          {showFuture && <rect className="future-zone" x={x(end)} y={0} width={Math.max(0, width - padR - x(end))} height={rowH}/>}
+          {limitVisible && <line className="limit-line" x1={padL} x2={width - padR} y1={y(limit)} y2={y(limit)}/>}
+          {fc && <>
+            <path d={band} fill={info.color} className="fc-band"/>
+            <path d={line} fill="none" stroke={info.color} className="fc-line"/>
+            {last && <circle cx={x(last.t)} cy={y(last.v)} r="3" fill="var(--surface)" stroke={info.color} strokeWidth="1.5"/>}
+          </>}
+          {data.length === 1
+            ? <circle cx={x(data[0].timestamp)} cy={y(data[0][metric])} r="4" fill={info.color}/>
+            : <path d={path} fill="none" stroke={info.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
+          {hover && <line className="cursor-line" x1={x(hover.t)} x2={x(hover.t)} y1={0} y2={rowH}/>}
+          {hover?.r && <circle cx={x(hover.t)} cy={y(hover.r[metric])} r="4.5" fill={info.color} stroke="var(--surface)" strokeWidth="2"/>}
+          {ahead && <>
+            <line className="fc-range" x1={x(hover!.t)} x2={x(hover!.t)} y1={y(ahead.hi)} y2={y(ahead.lo)} stroke={info.color}/>
+            <circle cx={x(hover!.t)} cy={y(ahead.v)} r="4.5" fill="var(--surface)" stroke={info.color} strokeWidth="2.5"/>
+          </>}
+        </svg>
+      </div>;
+    })}
+    <svg className="strip-axis" width={width} height={22} aria-hidden="true">
+      {timeTicks(start, axisEnd).map(tk => <g key={tk}>
+        <line x1={x(tk)} x2={x(tk)} y1={0} y2={5}/>
+        <text x={x(tk)} y={17} textAnchor="middle">{shortTime(tk)}</text>
+      </g>)}
+    </svg>
+    {showFuture && <p className="fc-legend" dir={t.dir}><i aria-hidden="true"/>{t.chart.legend(aheadLabel)}</p>}
+    {!data.length && <div className="chart-empty" dir={t.dir}>{t.chart.empty}</div>}
+  </div>;
+}
+
+/** Where the current value sits on the sensor's range, with the alert zone marked. */
+export function ScaleBar({ metric, value, settings }: { metric: Metric; value?: number; settings: Settings }) {
+  const limit = limitFor(metric, settings);
+  const min = 0;
+  const round = metric === 'eco2' || metric === 'tvoc' ? 100 : 10;
+  const max = Math.max(metricInfo[metric].max, Math.ceil(Math.max(value ?? 0, limit) * 1.15 / round) * round);
+  const pct = (v: number) => clamp((v - min) / (max - min) * 100);
+  const at = pct(limit);
+  return <div className="scale" dir="ltr" aria-hidden="true">
+    <div className="scale-track">
+      <span className="scale-zone" style={{ left: `${at}%`, right: 0 }}/>
+      {value !== undefined && <span className="scale-fill" style={{ width: `${pct(value)}%`, background: metricInfo[metric].color }}/>}
+      <span className="scale-limit" style={{ left: `${at}%` }}/>
+    </div>
+    <div className="scale-labels">
+      {at > 14 && <span style={{ left: 0 }}>{min}</span>}
+      <span className="scale-limit-label" style={{ left: `${at}%` }}>{limit}</span>
+      {at < 86 && <span style={{ right: 0 }}>{max}</span>}
+    </div>
+  </div>;
+}
