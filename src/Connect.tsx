@@ -30,11 +30,19 @@ const char* SERVER_URL    = "${cString(server)}";
 const char* DEVICE_KEY    = "${cString(key)}";   // empty = no key (an unprotected server)
 unsigned long sendEveryMs = ${server.startsWith('https') ? '30000' : '5000 '};                 // the dashboard can change this
 
-#define DHT_PIN    4    // DHT11 data (S / OUT)
-#define LED_PIN    25   // LED + (long leg) through 220 ohm; LED - to GND
-#define BUZZER_PIN 26   // to the NPN transistor's base through 1k ohm
-DHT dht(DHT_PIN, DHT11);
-Adafruit_CCS811 ccs;                          // I2C: SDA = GPIO 21, SCL = GPIO 22, WAK -> GND
+#define DHT_PIN    27   // DHT11 data (S / OUT). If nothing answers here, the code looks on other pins at start.
+#define LED_PIN    26   // LED + (long leg) through 220 ohm; LED - to GND
+#define BUZZER_PIN 25   // buzzer + (buzzer - to GND)
+#define SDA_PIN    33   // I2C data: OLED SDA and CCS811 SDA
+#define SCL_PIN    32   // I2C clock: OLED SCL and CCS811 SCL
+// Pins tried when the DHT11 does not answer on DHT_PIN (never the I2C, LED or buzzer pins).
+const int DHT_SEARCH[] = { DHT_PIN, 27, 4, 13, 14, 15, 18, 19, 21, 22, 23, 5 };
+DHT* dht = nullptr;
+int dhtPin = DHT_PIN;
+float lastT = NAN, lastH = NAN;   // the last good DHT11 reading
+unsigned long lastGoodDht = 0;
+int dhtFails = 0;
+Adafruit_CCS811 ccs;                          // I2C: SDA = GPIO 33, SCL = GPIO 32, WAK and ADD -> GND
 Adafruit_SSD1306 oled(128, 64, &Wire, -1);    // OLED on the same I2C bus, address 0x3C
 bool hasOled = false;
 uint16_t eco2 = 400, tvoc = 0;
@@ -50,6 +58,39 @@ void connectWiFi() {
   while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
   Serial.print("\nConnected, IP: ");
   Serial.println(WiFi.localIP());
+}
+
+// One DHT11 reading, tried up to 3 times (the ESP32's Wi-Fi sometimes spoils one read).
+bool readDht(DHT& sensor, float& t, float& h) {
+  for (int i = 0; i < 3; i++) {
+    h = sensor.readHumidity(true);      // true = a fresh read, not the cached one
+    t = sensor.readTemperature();       // from that same read
+    if (!isnan(t) && !isnan(h)) return true;
+    delay(1200);                        // the DHT11 needs over a second between reads
+  }
+  return false;
+}
+
+// At start: check the DHT11 on DHT_PIN; if it is silent, look for it on the other pins.
+void findDht() {
+  Serial.printf("DHT11: checking GPIO %d...\n", DHT_PIN);
+  for (int pin : DHT_SEARCH) {
+    DHT probe(pin, DHT11);
+    probe.begin();
+    delay(2000);                        // time to wake up after power-on
+    float t, h;
+    if (readDht(probe, t, h)) {
+      dhtPin = pin;
+      Serial.printf("DHT11 found on GPIO %d: %.1f C, %.0f%%\n", pin, t, h);
+      if (pin != DHT_PIN) Serial.printf(">> Your DHT11 data wire is on GPIO %d, not %d. The code uses %d now.\n", pin, DHT_PIN, pin);
+      lastT = t; lastH = h; lastGoodDht = millis();
+      break;
+    }
+    if (pin == DHT_PIN) Serial.println("DHT11: no answer on that pin. Looking on the other pins (about 30 s)...");
+  }
+  if (!lastGoodDht) Serial.println("DHT11 NOT FOUND. Check: + to 3V3, - to GND, S/OUT to GPIO 27 (a bare 4-pin DHT11 also needs a 10k resistor from data to 3V3).");
+  dht = new DHT(dhtPin, DHT11);
+  dht->begin();
 }
 
 void beep(int times) {
@@ -89,11 +130,11 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  dht.begin();
-  Wire.begin(21, 22);
+  Wire.begin(SDA_PIN, SCL_PIN);
   if (!ccs.begin()) Serial.println("CCS811 not found. Check SDA/SCL and WAK -> GND.");
   hasOled = oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   if (!hasOled) Serial.println("OLED not found (optional). Check its SDA/SCL.");
+  findDht();                  // before Wi-Fi starts, so nothing disturbs the search
   WiFi.mode(WIFI_STA);
   connectWiFi();
 }
@@ -104,9 +145,19 @@ void loop() {
   if (millis() - lastSend < sendEveryMs) { delay(20); return; }
   lastSend = millis();
 
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
-  if (isnan(t) || isnan(h)) { Serial.println("DHT11 read failed. Check the data pin."); return; }
+  float t, h;
+  if (readDht(*dht, t, h)) {
+    lastT = t; lastH = h; lastGoodDht = millis(); dhtFails = 0;
+  } else {
+    dhtFails++;
+    Serial.printf("DHT11 read failed on GPIO %d (%d in a row).\n", dhtPin, dhtFails);
+    // A short miss: keep sending with the last good values, so the dashboard stays live.
+    if (!lastGoodDht || millis() - lastGoodDht > 120000UL) {
+      Serial.println("No good DHT11 reading for 2 minutes: nothing sent. Check the wiring, then press EN to restart.");
+      return;
+    }
+    t = lastT; h = lastH;
+  }
   if (ccs.available() && !ccs.readData()) {
     eco2 = ccs.geteCO2();
     tvoc = ccs.getTVOC();
@@ -205,10 +256,10 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
   }
 
   const wiring: [string, string][] = [
-    ['DHT11 +', '3V3'], ['DHT11 S / OUT', 'GPIO 4'], ['DHT11 −', 'GND'],
-    ['CCS811 VCC', '3V3'], ['CCS811 GND', 'GND'], ['CCS811 SDA', 'GPIO 21'], ['CCS811 SCL', 'GPIO 22'], ['CCS811 WAK', 'GND'],
-    ['OLED VCC', '3V3'], ['OLED GND', 'GND'], ['OLED SDA', 'GPIO 21'], ['OLED SCL', 'GPIO 22'],
-    ['LED + (220 Ω)', 'GPIO 25'], ['LED −', 'GND'], ['Buzzer (NPN, 1 kΩ)', 'GPIO 26'],
+    ['DHT11 +', '3V3'], ['DHT11 S / OUT', 'GPIO 27'], ['DHT11 −', 'GND'],
+    ['CCS811 VCC', '3V3'], ['CCS811 GND', 'GND'], ['CCS811 SDA', 'GPIO 33'], ['CCS811 SCL', 'GPIO 32'], ['CCS811 WAK', 'GND'], ['CCS811 ADD', 'GND'],
+    ['OLED VCC', '3V3'], ['OLED GND', 'GND'], ['OLED SDA', 'GPIO 33'], ['OLED SCL', 'GPIO 32'],
+    ['LED + (220 Ω)', 'GPIO 26'], ['LED −', 'GND'], ['Buzzer +', 'GPIO 25'], ['Buzzer −', 'GND'],
   ];
   const fresh = latest && now - latest.timestamp < 60000;
 

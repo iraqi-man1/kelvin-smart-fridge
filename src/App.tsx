@@ -327,8 +327,8 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   </section>;
 
   const wiring: [string, string, string][] = [
-    ['DHT11', '+ / VCC', '3V3'], ['DHT11', 'S / OUT', 'GPIO 4'], ['DHT11', '− / GND', 'GND'],
-    ['CCS811', 'VCC', '3V3'], ['CCS811', 'GND', 'GND'], ['CCS811', 'SDA', 'GPIO 21'], ['CCS811', 'SCL', 'GPIO 22'], ['CCS811', 'WAK', t.sensors.toGround],
+    ['DHT11', '+ / VCC', '3V3'], ['DHT11', 'S / OUT', 'GPIO 27'], ['DHT11', '− / GND', 'GND'],
+    ['CCS811', 'VCC', '3V3'], ['CCS811', 'GND', 'GND'], ['CCS811', 'SDA', 'GPIO 33'], ['CCS811', 'SCL', 'GPIO 32'], ['CCS811', 'WAK', t.sensors.toGround],
   ];
 
   const langSwitch = <div className="lang-switch" role="group" aria-label={t.language}>
@@ -401,7 +401,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
 
       {page === 'sensors' && <div className="grid">
         <section className="panel sensor-panel">
-          <header className="panel-head"><div><h2>DHT11</h2><p>{t.sensors.dhtSub}</p></div><span className="tag mono">GPIO 4</span></header>
+          <header className="panel-head"><div><h2>DHT11</h2><p>{t.sensors.dhtSub}</p></div><span className="tag mono">GPIO 27</span></header>
           <dl className="spec-list">
             <div><dt>{t.sensors.measures}</dt><dd>{t.sensors.dhtMeasures}</dd></div>
             <div><dt>{t.sensors.accuracy}</dt><dd dir="ltr" className="mono">±2 °C · ±5 %RH</dd></div>
