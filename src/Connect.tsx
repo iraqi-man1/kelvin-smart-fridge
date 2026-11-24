@@ -45,6 +45,9 @@ int dhtFails = 0;
 Adafruit_CCS811 ccs;                          // I2C: SDA = GPIO 33, SCL = GPIO 32, WAK and ADD -> GND
 Adafruit_SSD1306 oled(128, 64, &Wire, -1);    // OLED on the same I2C bus, address 0x3C
 bool hasOled = false;
+unsigned long lastScreen = 0;
+void showStatus(const char* line1, const char* line2 = "");   // defined further down
+int lastCode = 0;             // the server's last answer (201 = saved)
 uint16_t eco2 = 400, tvoc = 0;
 String acks = "";             // ids of the commands carried out, sent with the next reading
 String screenMessage = "";    // the dashboard's message for the OLED
@@ -53,11 +56,12 @@ unsigned long lastSend = 0;
 
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
-  Serial.print("Connecting to Wi-Fi");
+  showStatus("Connecting to Wi-Fi", WIFI_NAME);
   WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
   Serial.print("\nConnected, IP: ");
   Serial.println(WiFi.localIP());
+  showStatus("Wi-Fi connected", WiFi.localIP().toString().c_str());
 }
 
 // One DHT11 reading, tried up to 3 times (the ESP32's Wi-Fi sometimes spoils one read).
@@ -97,17 +101,49 @@ void beep(int times) {
   for (int i = 0; i < times; i++) { digitalWrite(BUZZER_PIN, HIGH); delay(150); digitalWrite(BUZZER_PIN, LOW); delay(150); }
 }
 
-void showOnScreen(float t, float h) {
+// A start-up line on the screen ("Wi-Fi...", "DHT11 on GPIO 27"), so it is never black.
+void showStatus(const char* line1, const char* line2) {
+  Serial.println(line1);
+  if (!hasOled) return;
+  oled.clearDisplay();
+  oled.setTextSize(2); oled.setTextColor(SSD1306_WHITE);
+  oled.setCursor(0, 0); oled.print("Kelvin");
+  oled.setTextSize(1);
+  oled.setCursor(0, 28); oled.print(line1);
+  oled.setCursor(0, 42); oled.print(line2);
+  oled.display();
+}
+
+// The readings screen, redrawn every 2 seconds whether or not the DHT11 answered.
+void showOnScreen() {
   if (!hasOled) return;
   oled.clearDisplay();
   oled.setTextSize(1);
   oled.setTextColor(SSD1306_WHITE);
-  oled.setCursor(0, 0);  oled.print("Kelvin");
-  oled.setCursor(0, 14); oled.printf("Temp %.1f C  Hum %.0f%%", t, h);
+  oled.setCursor(0, 0);
+  oled.print("Kelvin ");
+  oled.print(WiFi.status() == WL_CONNECTED ? (lastCode == 201 ? "online" : "Wi-Fi ok") : "no Wi-Fi");
+  oled.setCursor(0, 14);
+  if (isnan(lastT)) oled.print("Temp --   Hum --");
+  else oled.printf("Temp %.1f C  Hum %.0f%%", lastT, lastH);
   oled.setCursor(0, 26); oled.printf("eCO2 %u ppm", eco2);
   oled.setCursor(0, 38); oled.printf("TVOC %u ppb", tvoc);
   oled.setCursor(0, 52); oled.print(screenMessage);
   oled.display();
+}
+
+// Lists what answers on the I2C bus: 0x3C/0x3D = OLED, 0x5A/0x5B = CCS811.
+void scanI2C() {
+  Serial.printf("I2C scan (SDA GPIO %d, SCL GPIO %d):\n", SDA_PIN, SCL_PIN);
+  int found = 0;
+  for (uint8_t a = 1; a < 127; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("  found 0x%02X %s\n", a, a == 0x3C || a == 0x3D ? "(OLED)" : a == 0x5A || a == 0x5B ? "(CCS811)" : "");
+      found++;
+    }
+  }
+  if (!found) Serial.println("  nothing found: check SDA/SCL wires, 3V3 and GND of the OLED and CCS811.");
 }
 
 // One command from the dashboard: beep, led, message, interval or reboot.
@@ -132,9 +168,13 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   Wire.begin(SDA_PIN, SCL_PIN);
   if (!ccs.begin()) Serial.println("CCS811 not found. Check SDA/SCL and WAK -> GND.");
-  hasOled = oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  if (!hasOled) Serial.println("OLED not found (optional). Check its SDA/SCL.");
+  scanI2C();
+  hasOled = oled.begin(SSD1306_SWITCHCAPVCC, 0x3C) || oled.begin(SSD1306_SWITCHCAPVCC, 0x3D);
+  if (!hasOled) Serial.println("OLED not found. Check its SDA (GPIO 33), SCL (GPIO 32), VCC and GND.");
+  showStatus("Starting...", "Looking for DHT11");
   findDht();                  // before Wi-Fi starts, so nothing disturbs the search
+  if (lastGoodDht) { char line[24]; snprintf(line, sizeof line, "DHT11 on GPIO %d", dhtPin); showStatus(line, "OK"); }
+  else showStatus("DHT11 not found", "check its wires");
   WiFi.mode(WIFI_STA);
   connectWiFi();
 }
@@ -142,6 +182,11 @@ void setup() {
 void loop() {
   connectWiFi();
   if (ledBlink) digitalWrite(LED_PIN, (millis() / 400) % 2);
+  if (millis() - lastScreen >= 2000) {
+    lastScreen = millis();
+    if (ccs.available() && !ccs.readData()) { eco2 = ccs.geteCO2(); tvoc = ccs.getTVOC(); }
+    showOnScreen();
+  }
   if (millis() - lastSend < sendEveryMs) { delay(20); return; }
   lastSend = millis();
 
@@ -163,7 +208,7 @@ void loop() {
     tvoc = ccs.getTVOC();
     ccs.setEnvironmentalData(h, t);   // improves the CCS811 estimate
   }
-  showOnScreen(t, h);
+  showOnScreen();
 
   String body = String("{\"temperature\":") + String(t, 1) +
                 ",\"humidity\":" + String(h, 1) +
@@ -179,6 +224,7 @@ void loop() {
   http.addHeader("Content-Type", "application/json");
   if (strlen(DEVICE_KEY)) http.addHeader("X-Device-Key", DEVICE_KEY);
   int code = http.POST(body);
+  lastCode = code;
   Serial.printf("Sent %s -> %d\n", body.c_str(), code);
   if (code == 201) {
     acks = "";
