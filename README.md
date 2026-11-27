@@ -16,7 +16,7 @@ An ESP32 reads the temperature, humidity and air quality inside a fridge. Kelvin
 ![Vercel](https://img.shields.io/badge/Hosted_on-Vercel-000?logo=vercel)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase&logoColor=white)
 ![Telegram](https://img.shields.io/badge/Alerts-Telegram_·_ntfy_·_email-26A5E4?logo=telegram&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-62_unit_+_e2e-brightgreen)
+![Tests](https://img.shields.io/badge/tests-72_passing-brightgreen)
 ![Languages](https://img.shields.io/badge/UI-English_·_العربية_·_Melayu-blueviolet)
 
 <img src="docs/gifs/dashboard.gif" alt="The Kelvin dashboard showing four live sensor cards" width="100%">
@@ -188,7 +188,7 @@ The full guide covers Supabase, Gmail, Telegram, ntfy, Vercel, roles and flashin
 ## ✅ Tests
 
 ```bash
-npm test            # 62 unit tests: accounts, sign-up, OTP, schedule, alerts, security, Vercel
+npm test            # 72 unit tests: accounts, sign-up, OTP, schedule, alerts, security, Vercel
 npm run test:e2e    # browser tests with Playwright
 ```
 
