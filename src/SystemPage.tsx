@@ -4,7 +4,7 @@ import type { User } from './accountApi';
 import { useT } from './i18n';
 
 type Info = {
-  hosting?: 'netlify' | 'local';
+  hosting?: 'netlify' | 'vercel' | 'local';
   storage?: { kind: string; label: string; readings: number };
   system?: { deviceProtected: boolean; deviceLastSeen: number | null; lastReading: number | null; telegram: boolean; email: boolean; node: string };
 };
@@ -47,7 +47,7 @@ export function SystemPage({ user, mode }: { user: User; mode: 'demo' | 'live' }
         <Link label={s.links.wires}/>
         <Node id="esp32" icon={<Cpu size={22}/>} title={n.esp32[0]} sub={n.esp32[1]} ok={Boolean(sys?.deviceProtected)} status={sys?.deviceProtected ? s.keyOn : s.keyOff}/>
         <div className="sys-pair"><Link label={s.links.http}/><Link label={s.links.back} back/></div>
-        <Node id="server" icon={<Server size={22}/>} title={n.server[0]} sub={info.hosting === 'netlify' ? n.serverCloud[1] : n.server[1]} ok status={s.running((sys?.node ?? '').replace(/^v(\d+).*/, '$1'))}/>
+        <Node id="server" icon={<Server size={22}/>} title={n.server[0]} sub={info.hosting === 'vercel' ? n.serverCloud[1].replace('Netlify', 'Vercel') : info.hosting === 'netlify' ? n.serverCloud[1] : n.server[1]} ok status={s.running((sys?.node ?? '').replace(/^v(\d+).*/, '$1'))}/>
         <Link label={s.links.sql}/>
         <Node id="db" icon={<Database size={22}/>} title={n.db[0]} sub={info.storage?.kind === 'postgres' ? n.db[1] : s.files}
           ok={info.storage?.kind === 'postgres'} status={info.storage ? s.rows(info.storage.readings.toLocaleString('en-US')) : '…'}/>

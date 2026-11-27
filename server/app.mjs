@@ -11,11 +11,11 @@ import { createSecurity, DEVICE_COOKIE, DEVICE_DAYS } from './security.mjs';
 import { isDue, nextSlot, READING_EVERY } from './schedule.mjs';
 
 /**
- * Kelvin's API, shared by the local server (server.mjs) and the Netlify function
- * (netlify/functions/api.mjs). `handle(req, res)` answers /api/* and returns false for
+ * Kelvin's API, shared by the local server (server.mjs) and the online functions
+ * (server/web.mjs, used by netlify/functions/api.mjs and api/index.mjs on Vercel). `handle(req, res)` answers /api/* and returns false for
  * anything else, so the caller can serve the pages.
  *
- * serverless: true on Netlify, where many short-lived copies may run at once. Nothing is
+ * serverless: true online (Netlify or Vercel), where many short-lived copies may run at once. Nothing is
  * trusted from memory there: each request reloads the state it needs from the database.
  */
 export async function createApp({ dataDir, readingsFile, databaseUrl, serverless = false, port = 5173, log = console.log }) {
@@ -320,7 +320,7 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
       }
 
       if (p === '/api/info' && req.method === 'GET') {
-        // On Netlify the device posts to this site's own HTTPS address.
+        // Online (Netlify or Vercel) the device posts to this site's own HTTPS address.
         const ingestUrl = serverless
           ? `https://${req.headers.host}/api/readings`
           : `http://${Object.values(networkInterfaces()).flat().find(n => n && n.family === 'IPv4' && !n.internal)?.address || 'localhost'}:${port}/api/readings`;
@@ -328,7 +328,7 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
         await alerts.ready;
         const lastReading = serverless ? (await store.recentReadings(1))[0] : readings.at(-1);
         return reply(200, {
-          ingestUrl, sensors: ['DHT11', 'CCS811'], units: { eco2: 'ppm', tvoc: 'ppb' }, hosting: serverless ? 'netlify' : 'local',
+          ingestUrl, sensors: ['DHT11', 'CCS811'], units: { eco2: 'ppm', tvoc: 'ppb' }, hosting: serverless ? (process.env.VERCEL ? 'vercel' : 'netlify') : 'local',
           storage: { kind: store.kind, label: storageLabel, readings: await store.countReadings() },
           schedule: { every: READING_EVERY },
           // For the "How the system works" page: what is connected right now.

@@ -39,14 +39,14 @@
 ## كيف يشتغل
 
 ```
-DHT11 + CCS811 → ESP32 ──HTTPS──► Netlify Function (Node) ──► Supabase (PostgreSQL)
+DHT11 + CCS811 → ESP32 ──HTTPS──► Vercel / Netlify Function (Node) ──► Supabase (PostgreSQL)
                     ▲                        │
                     └─ موعد الإرسال الجاي ──┤──► اللوحة (React)
                                              └──► تلكرام · ntfy · البريد
 ```
 
 - **الجهاز:** ESP32-WROOM-32، DHT11، CCS811، وشاشة OLED SSD1306. برنامج Arduino يتولّد من صفحة «ربط الجهاز».
-- **الموقع:** React 19 و TypeScript و Vite، والخادم Node على Netlify Functions، وقاعدة البيانات Supabase.
+- **الموقع:** React 19 و TypeScript و Vite، والخادم Node على Vercel أو Netlify Functions (نفس الكود)، وقاعدة البيانات Supabase.
 
 ## التشغيل على جهازك
 
@@ -56,7 +56,7 @@ cp .env.example .env   # ضيف رابط قاعدة البيانات وإعدا�
 npm run dev            # http://localhost:5173
 ```
 
-الاختبارات: `npm test`. الشرح الكامل (Supabase، Gmail، تلكرام، ntfy، Netlify، الصلاحيات): **[docs/SETUP.md](docs/SETUP.md)**.
+الاختبارات: `npm test`. الشرح الكامل (Supabase، Gmail، تلكرام، ntfy، Netlify، Vercel، الصلاحيات): **[docs/SETUP.md](docs/SETUP.md)**.
 
 ---
 

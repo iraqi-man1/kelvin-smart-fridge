@@ -308,7 +308,7 @@ const en = {
     commands: { 'beep': 'Beep', 'led': 'LED', 'message': 'OLED message', 'interval': 'Send interval', 'reboot': 'Restart' } as Record<string, string>,
     unknown: 'Unknown (not signed in)', empty: 'Nothing here yet.', more: (n: number) => `Show more (${n})`,
     note: 'The last 400 entries are kept. Passwords, codes and keys are never written here.',
-    vaultTitle: 'Set a vault key', vaultText: 'Passwords you set for users are encrypted with the database address because VAULT_KEY is not set. Add a long random VAULT_KEY in Netlify (Site configuration → Environment variables) and redeploy; existing passwords move to the new key by themselves.',
+    vaultTitle: 'Set a vault key', vaultText: 'Passwords you set for users are encrypted with the database address because VAULT_KEY is not set. Add a long random VAULT_KEY in your host’s Environment variables (Netlify or Vercel) and redeploy; existing passwords move to the new key by themselves.',
   },
   support: {
     title: 'Report a fault or a problem', sub: 'It goes straight to the IT team on Telegram, with your name and email so they can reply.',
@@ -708,7 +708,7 @@ const ar: Dict = {
     commands: { 'beep': 'صفير', 'led': 'LED', 'message': 'رسالة على الشاشة', 'interval': 'سرعة الإرسال', 'reboot': 'إعادة تشغيل' } as Record<string, string>,
     unknown: 'غير معروف (ما مسجل دخول)', empty: 'ماكو شي بعد.', more: (n: number) => `عرض المزيد (${n})`,
     note: 'ينحفظ آخر 400 سجل. كلمات السر والرموز والمفاتيح ما تنكتب هنا أبداً.',
-    vaultTitle: 'حط مفتاح للخزنة', vaultText: 'كلمات السر اللي تحددها للمستخدمين مشفّرة برابط قاعدة البيانات لأن VAULT_KEY مو مضبوط. ضيف VAULT_KEY طويل وعشوائي في Netlify (Site configuration ← Environment variables) وأعد الرفع؛ كلمات السر الموجودة تنتقل للمفتاح الجديد وحدها.',
+    vaultTitle: 'حط مفتاح للخزنة', vaultText: 'كلمات السر اللي تحددها للمستخدمين مشفّرة برابط قاعدة البيانات لأن VAULT_KEY مو مضبوط. ضيف VAULT_KEY طويل وعشوائي في Environment variables عند الاستضافة (Netlify أو Vercel) وأعد الرفع؛ كلمات السر الموجودة تنتقل للمفتاح الجديد وحدها.',
   },
   support: {
     title: 'أبلغ عن عطل أو مشكلة', sub: 'يوصل مباشرة لقسم تقنية المعلومات على تلكرام، مع اسمك وبريدك حتى يردّون عليك.',
@@ -1106,7 +1106,7 @@ const ms: Dict = {
     commands: { 'beep': 'Bip', 'led': 'LED', 'message': 'Mesej OLED', 'interval': 'Selang hantar', 'reboot': 'Mula semula' } as Record<string, string>,
     unknown: 'Tidak diketahui (tidak log masuk)', empty: 'Belum ada apa-apa.', more: (n: number) => `Tunjuk lagi (${n})`,
     note: '400 catatan terakhir disimpan. Kata laluan, kod dan kunci tidak pernah ditulis di sini.',
-    vaultTitle: 'Tetapkan kunci peti', vaultText: 'Kata laluan yang anda tetapkan untuk pengguna disulitkan dengan alamat pangkalan data kerana VAULT_KEY belum ditetapkan. Tambah VAULT_KEY rawak yang panjang di Netlify (Site configuration → Environment variables) dan deploy semula; kata laluan sedia ada berpindah ke kunci baharu dengan sendirinya.',
+    vaultTitle: 'Tetapkan kunci peti', vaultText: 'Kata laluan yang anda tetapkan untuk pengguna disulitkan dengan alamat pangkalan data kerana VAULT_KEY belum ditetapkan. Tambah VAULT_KEY rawak yang panjang dalam Environment variables hos anda (Netlify atau Vercel) dan deploy semula; kata laluan sedia ada berpindah ke kunci baharu dengan sendirinya.',
   },
   support: {
     title: 'Laporkan kerosakan atau masalah', sub: 'Ia terus ke pasukan IT di Telegram, dengan nama dan e-mel anda supaya mereka boleh membalas.',
