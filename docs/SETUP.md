@@ -181,7 +181,7 @@ Content-Type: application/json
 
 ## النشر على Netlify
 
-الموقع: https://kelvin-smart-fridge.netlify.app — الصفحات من `dist/`، والـ API كله دالة واحدة (`netlify/functions/api.mjs`) تشغّل نفس كود `server/app.mjs`. كل الحالة (الجلسات، رموز البريد، محاولات الدخول، حالة تنبيهات تلكرام) محفوظة في Supabase لأن نسخ الدالة قصيرة العمر ومتعددة.
+الموقع القديم: https://kelvin-smart-fridge.netlify.app (الموقع الحالي على Vercel، بالقسم الجاي) — الصفحات من `dist/`، والـ API كله دالة واحدة (`netlify/functions/api.mjs`) تشغّل نفس كود `server/app.mjs`. كل الحالة (الجلسات، رموز البريد، محاولات الدخول، حالة تنبيهات تلكرام) محفوظة في Supabase لأن نسخ الدالة قصيرة العمر ومتعددة.
 
 المتغيرات (تُضاف مرة واحدة، من جهازك):
 
@@ -206,6 +206,8 @@ npx netlify env:import .env
 3. قبل **Deploy**، افتح **Environment Variables** وضيف نفس متغيرات Netlify: `DATABASE_URL` (ضروري)، `VAULT_KEY`، `KELVIN_TIMEZONE`، `GMAIL_USER` و`GMAIL_APP_PASSWORD`، وتلكرام و ntfy إذا تستخدمهم. القيم من `.env` عندك، تكتبها بيدك.
 4. **Deploy**. بعدها كل `git push` على `main` ينشر وحده.
 5. افتح الموقع الجديد (`https://….vercel.app`)، ومن «ربط الجهاز» نزّل كود الـ ESP32 من جديد (لأن العنوان تغيّر) وارفعه على الجهاز.
+
+الموقع: https://kelvin-smart-fridge.vercel.app (مشروع `ali-d888/kelvin-smart-fridge`).
 
 الخطة المجانية (Hobby) ما تنام، والجهاز ياخذ بس 16 طلب باليوم. الاستهلاك يبين بـ **Usage** بلوحة Vercel.
 

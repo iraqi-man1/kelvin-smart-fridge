@@ -8,7 +8,7 @@
 
 لوحة تحكم لثلاجة ذكية: جهاز **ESP32** يقرأ الحرارة والرطوبة (**DHT11**) وجودة الهواء (**CCS811**) ويرسلها للموقع. الموقع يعرضها مباشرة، ويتوقع القراءات الجاية، وينبّهك على **تلكرام** و **ntfy** قبل ما يخرب الأكل.
 
-🔗 **الموقع:** https://kelvin-smart-fridge.netlify.app
+🔗 **الموقع:** https://kelvin-smart-fridge.vercel.app (النسخة القديمة على Netlify: https://kelvin-smart-fridge.netlify.app)
 
 <img src="docs/screenshots/overview.png" alt="لوحة المراقبة" width="100%">
 
