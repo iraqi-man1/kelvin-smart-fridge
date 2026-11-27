@@ -27,8 +27,7 @@ export type AuditEntry = {
   id: string; at: number; action: string; ip: string; browser: string; detail: string;
   actor: { id?: string; name: string; email?: string } | null; target: { id?: string; name: string; email?: string } | null;
 };
-export type Command = { id: string; type: 'beep' | 'led' | 'message' | 'interval' | 'reboot'; value: unknown; by: string; createdAt: number; status: 'pending' | 'sent' | 'done' | 'cancelled' };
-export type DeviceStatus = { protected: boolean; keys: DeviceKey[]; lastSeen: number | null; commands: Command[] };
+export type DeviceStatus = { protected: boolean; keys: DeviceKey[]; lastSeen: number | null };
 
 export type Otp = { challenge: string; email: string; resendIn: number };
 
@@ -86,8 +85,6 @@ export const api = {
   supportTest: () => call('/api/support/test', 'POST', {}),
   // Device
   device: () => call<DeviceStatus>('/api/device'),
-  command: (type: Command['type'], value?: unknown) => call<{ command: Command }>('/api/device/commands', 'POST', { type, value }).then(b => b.command),
-  cancelCommand: (id: string) => call<DeviceStatus>(`/api/device/commands/${id}`, 'DELETE'),
   createKey: (label: string) => call<{ key: string; entry: DeviceKey }>('/api/device/keys', 'POST', { label }),
   revokeKey: (id: string) => call<DeviceStatus>(`/api/device/keys/${id}`, 'DELETE'),
   rotateKey: (id: string) => call<{ key: string; entry: DeviceKey; old: DeviceKey }>(`/api/device/keys/${id}/rotate`, 'POST', {}),

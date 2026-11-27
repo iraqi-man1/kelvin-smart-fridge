@@ -14,7 +14,6 @@ import { AccountPage, Avatar } from './Account';
 import { api, canManage, type Prefs, type User } from './accountApi';
 import { SupportPage } from './SupportPage';
 import { SideNav } from './SideNav';
-import { DeviceControl } from './DeviceControl';
 import { SystemPage } from './SystemPage';
 import { UsersPage } from './Users';
 import { ConnectGuide } from './Connect';
@@ -396,7 +395,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
 
       {(page === 'overview' || page === 'sensors') && readouts}
 
-      {page === 'overview' && <div className="grid">{chart}{device}{energySummary}<DeviceControl user={user} mode={mode} notify={notify}/>{readingTable()}{todayPanel}</div>}
+      {page === 'overview' && <div className="grid">{chart}{device}{energySummary}{readingTable()}{todayPanel}</div>}
 
       {page === 'energy' && <EnergyPage readings={readings} settings={settings} now={now} onSettings={openSettings}/>}
 

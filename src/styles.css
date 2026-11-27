@@ -952,32 +952,10 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .first-note { margin: 0; }
 @media (max-width: 760px) { .invite-form { grid-template-columns: 1fr; } }
 
-/* Device control */
-.control-panel .panel-head { flex-wrap: wrap; }
-.control-state { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 12.5px; }
 .guard { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .guard.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .guard.warn { background: var(--caution-soft); color: var(--caution); }
-.control-note { margin: 0 0 14px; }
-.control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
-.control-grid[aria-disabled='true'] { opacity: .6; }
-.control-card { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
-.control-card h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13.5px; font-weight: 600; }
-.control-card h3 svg { color: var(--accent); }
-.control-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.control-row .button { height: 32px; }
-.control-message { grid-column: span 2; }
-.control-message input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 13.5px; }
-.control-message .field-note { display: block; margin-top: 6px; }
 .field-note.bad { color: var(--alert); }
-.command-list { list-style: none; margin: 0; padding: 0; }
-.command-list li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-.cmd-what { flex: 1; min-width: 0; }
-.cmd-status { min-width: 74px; text-align: center; padding: 1px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600; background: var(--surface-2); color: var(--ink-3); }
-.cmd-status.pending { background: var(--caution-soft); color: var(--caution); }
-.cmd-status.sent { background: var(--accent-soft); color: var(--accent); }
-.cmd-status.done { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
-@media (max-width: 760px) { .control-message { grid-column: auto; } .control-state { align-items: flex-start; } }
 
 /* Device key (Connect guide) */
 .key-box { margin-bottom: 14px; padding: 14px; border-radius: var(--radius); border: 1px solid var(--line-2); background: var(--surface); }

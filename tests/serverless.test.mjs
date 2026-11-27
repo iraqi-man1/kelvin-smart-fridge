@@ -41,13 +41,3 @@ test('failed sign-ins count across server copies', async () => {
   await assert.rejects(createAccounts({ store }).login({ email: 'lock@example.test', password: 'account-pass' }, 'ip9'), { code: 'too-many' });
 });
 
-test('a command queued on one server copy reaches the device through another', async () => {
-  const store = await shared();
-  const web = createDevice({ store });
-  const cmd = await web.add('beep', 2, 'Ali');
-  const ingest = createDevice({ store });
-  assert.deepEqual((await ingest.deliver()).map(c => c.id), [cmd.id]);
-  await createDevice({ store }).acknowledge([cmd.id]);
-  await web.refresh();
-  assert.equal((await web.status()).commands[0].status, 'done');
-});

@@ -113,25 +113,6 @@ test('device keys: open until one exists, then only the right key; shown once, s
   assert.equal((await d.check({ 'x-device-key': key })).protected, false);
 });
 
-test('commands go out once in the reply, then the device confirms them', async () => {
-  const d = createDevice({ store: await stores.json() });
-  await assert.rejects(() => d.add('selfdestruct'), { code: 'bad-command' });
-  await assert.rejects(() => d.add('beep', 9), { code: 'bad-command-value' });
-  await assert.rejects(() => d.add('message', 'مرحبا'), { code: 'bad-command-value' }); // the OLED font is ASCII
-  const beep = await d.add('beep', 2, 'Ali');
-  const msg = await d.add('message', 'Door open!', 'Ali');
-  const reboot = await d.add('reboot', undefined, 'Ali');
-  const cancelled = await d.add('led', 'blink', 'Ali');
-  await d.cancel(cancelled.id);
-
-  const out = await d.deliver();
-  assert.deepEqual(out.map(c => c.type), ['beep', 'message', 'reboot']);
-  assert.deepEqual(await d.deliver(), []); // never twice: a restart must not loop
-  await d.acknowledge([beep.id, msg.id]);
-  const status = Object.fromEntries((await d.status()).commands.map(c => [c.id, c.status]));
-  assert.deepEqual([status[beep.id], status[msg.id], status[reboot.id], status[cancelled.id]], ['done', 'done', 'sent', 'cancelled']);
-});
-
 test('the admin sees the password they set, can change it any time, and loses sight of it when the user picks their own', async () => {
   const mail = fakeMail();
   const store = await stores.json();

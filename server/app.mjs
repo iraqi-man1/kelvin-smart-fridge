@@ -245,21 +245,8 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
         return reply(200, { ok: true });
       }
 
-      // ----- Device: status, commands (admin and member), keys (admin) -----
+      // ----- Device: status, keys (admin) -----
       if (p === '/api/device' && req.method === 'GET') return reply(200, await device.status());
-      if (p === '/api/device/commands' && req.method === 'POST') {
-        if (!allowed('control')) return forbidden();
-        const { type, value } = await jsonBody(req);
-        const command = await device.add(type, value, me.name);
-        await note(me.id, 'command');
-        await audit('device-command', req, { actor: me, detail: String(type) });
-        return reply(201, { command });
-      }
-      if (p.startsWith('/api/device/commands/') && req.method === 'DELETE') {
-        if (!allowed('control')) return forbidden();
-        await device.cancel(p.split('/').pop());
-        return reply(200, await device.status());
-      }
       if (p === '/api/device/keys' && req.method === 'POST') {
         if (!allowed('manage')) return forbidden();
         const made = await device.createKey((await jsonBody(req)).label, me.name);
@@ -391,8 +378,8 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
           try {
             const data = await jsonBody(req);
             const reading = normalizeReading(data);
-            // Fixed schedule: only the first reading of each 90-minute slot is kept. The device
-            // checks in more often than that (to pick up commands); the rest are not saved.
+            // Fixed schedule: only the first reading of each 90-minute slot is kept (a device that
+            // restarts mid-slot may send a second one; it is not saved). The reply says when the next is due.
             const last = serverless ? (await store.recentReadings(1))[0] : readings.at(-1);
             const saved = isDue(reading.timestamp, last?.timestamp);
             if (saved) {
@@ -401,12 +388,9 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
               // Finished before replying: on Netlify the function may stop right after the reply.
               await alerts.check(reading);
             }
-            await device.acknowledge(data.acks);
             const next = nextSlot(reading.timestamp);
-            // Commands from the dashboard ride back on the reply, saved or not.
             return reply(saved ? 201 : 200, {
               ok: true, saved, ...(saved ? { reading } : {}), nextAt: next, nextIn: Math.ceil((next - reading.timestamp) / 1000),
-              commands: await device.deliver(),
             });
           } catch (error) {
             if (error instanceof TooLarge) return reply(413, { error: 'Payload too large.' });

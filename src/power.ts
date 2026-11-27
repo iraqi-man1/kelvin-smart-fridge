@@ -19,8 +19,6 @@ export const parts: Part[] = [
   { id: 'dht11', kind: 'always', mA: 2.6 },
   { id: 'ccs811', kind: 'always', mA: 14 },
   { id: 'oled', kind: 'always', mA: 10 },
-  { id: 'led', kind: 'alert', mA: 5.9, duty: 1 },
-  { id: 'buzzer', kind: 'alert', mA: 30, duty: 0.5 },
 ];
 
 // Readings come every 1 h 30 min (fixed); further apart means the system was off or offline.

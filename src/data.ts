@@ -4,8 +4,8 @@ export const metrics: Metric[] = ['temperature', 'humidity', 'eco2', 'tvoc'];
 
 /** Fixed: the server keeps one reading every 1 h 30 min (server/schedule.mjs). Nobody can change it. */
 export const READING_EVERY = 90 * 60000;
-/** How often the ESP32 checks in with the online server for commands (not saved as readings). */
-export const CHECK_IN_SECONDS = 30;
+/** How often the ESP32 sends (and switches its Wi-Fi radio to transmit): once a reading, every 1 h 30 min. */
+export const CHECK_IN_SECONDS = READING_EVERY / 1000;
 /** The dashboard asks the server for new readings this often. */
 export const POLL_MS = 30000;
 
@@ -13,7 +13,7 @@ export const defaults: Settings = {
   deviceName: 'ESP32-WROOM-32', room: 'Smart Fridge V3',
   temperatureMax: 35, humidityMax: 80, eco2Max: 1000, tvocMax: 500,
   supplyVoltage: 5, tariff: 0.27, currency: 'MYR', privacyBlur: true,
-  parts: ['esp32', 'wifi', 'board', 'dht11', 'ccs811', 'oled', 'led', 'buzzer'],
+  parts: ['esp32', 'wifi', 'board', 'dht11', 'ccs811', 'oled'],
 };
 
 // Series colours are checked for colour-vision separation; identity is also carried by labels.
@@ -98,6 +98,7 @@ export function sanitizeSettings(saved: unknown): Settings {
       !inRange(s.tvocMax, 1, 65535) ||
       !inRange(s.supplyVoltage, 3, 24) || !inRange(s.tariff, 0, 100)) return defaults;
     delete (s as { interval?: number }).interval; // was the dashboard refresh; now fixed
+    s.parts = s.parts.filter(id => defaults.parts.includes(id)); // the LED and buzzer were removed
     return s;
   } catch { return defaults; }
 }

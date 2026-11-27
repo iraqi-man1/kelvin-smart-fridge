@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Award, CalendarCheck, Camera, Crown, FileSpreadsheet, Flame, LifeBuoy, Lock, Radio, ShieldCheck, Sparkles, Sprout, Trophy } from 'lucide-react';
+import { Award, CalendarCheck, Camera, Crown, FileSpreadsheet, Flame, LifeBuoy, Lock, ShieldCheck, Sparkles, Sprout, Trophy } from 'lucide-react';
 import { api, type Activity, type User } from './accountApi';
 import { useT } from './i18n';
 
-type BadgeId = 'welcome' | 'regular' | 'dedicated' | 'veteran' | 'streak3' | 'streak7' | 'month' | 'secure' | 'guarded' | 'portrait' | 'analyst' | 'commander' | 'helper';
+type BadgeId = 'welcome' | 'regular' | 'dedicated' | 'veteran' | 'streak3' | 'streak7' | 'month' | 'secure' | 'guarded' | 'portrait' | 'analyst' | 'helper';
 
 /** Each badge: its icon, and how far along the person is (value of target). */
 const BADGES: { id: BadgeId; icon: ReactNode; progress: (a: Activity, u: User) => [number, number] }[] = [
@@ -18,7 +18,6 @@ const BADGES: { id: BadgeId; icon: ReactNode; progress: (a: Activity, u: User) =
   { id: 'guarded', icon: <Lock size={22}/>, progress: (_, u) => [u.hasLockCode ? 1 : 0, 1] },
   { id: 'portrait', icon: <Camera size={22}/>, progress: (_, u) => [u.avatar ? 1 : 0, 1] },
   { id: 'analyst', icon: <FileSpreadsheet size={22}/>, progress: a => [a.exports, 1] },
-  { id: 'commander', icon: <Radio size={22}/>, progress: a => [a.commands, 1] },
   { id: 'helper', icon: <LifeBuoy size={22}/>, progress: a => [a.reports, 1] },
 ];
 

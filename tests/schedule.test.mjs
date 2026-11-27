@@ -28,12 +28,13 @@ test('only the first reading of each slot is due', () => {
   assert.equal(isDue(at('2026-11-27T09:00:05Z'), at('2026-11-27T07:31:00Z'), tz), true);
 });
 
-test('the send rate is not a device command any more', async () => {
+test('the dashboard has no device commands any more', async () => {
   const device = createDevice({ store: createJsonStore(path.join(tmpdir(), `kelvin-sched-${Math.random()}`)) });
-  await assert.rejects(device.add('interval', 5, 'Ali'), { code: 'bad-command' });
+  assert.equal(device.add, undefined);
+  assert.equal('commands' in (await device.status()), false);
 });
 
-test('the server keeps one reading per slot; check-ins in between still get commands', async () => {
+test('the server keeps one reading per slot; a second send in the same slot is not saved', async () => {
   const dir = path.join(tmpdir(), `kelvin-sched-app-${Math.random()}`);
   const app = await createApp({ dataDir: dir, readingsFile: path.join(dir, 'readings.json'), log: () => {} });
   const server = createServer(async (req, res) => { if (!(await app.handle(req, res))) { res.statusCode = 404; res.end(); } });
@@ -51,7 +52,8 @@ test('the server keeps one reading per slot; check-ins in between still get comm
     const b = await second.json();
     assert.equal(b.saved, false);
     assert.equal(b.reading, undefined);
-    assert.ok(Array.isArray(b.commands));
+    assert.equal(b.commands, undefined);
+    assert.ok(b.nextIn > 0 && b.nextIn <= 5400);
   } finally {
     server.close();
     await app.close();

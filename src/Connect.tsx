@@ -11,9 +11,9 @@ const cString = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 /** The whole Arduino sketch, with this user's Wi-Fi, server address and device key filled in. */
 export function sketch(ssid: string, password: string, server: string, key = '') {
-  return String.raw`// Kelvin — ESP32 + DHT11 + CCS811 + OLED + LED + buzzer
-// The server keeps one reading every 1 h 30 min, on fixed times (00:00, 01:30, 03:00 ...).
-// The device checks in more often only to pick up the dashboard's commands.
+  return String.raw`// Kelvin — ESP32 + DHT11 + CCS811 + OLED
+// One reading is sent every 1 h 30 min, on fixed times (00:00, 01:30, 03:00 ...).
+// The server says when the next one is due; the OLED shows live values in between.
 // Libraries: DHT sensor library, Adafruit CCS811, Adafruit SSD1306 (+ GFX), ArduinoJson.
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -29,14 +29,12 @@ const char* WIFI_NAME     = "${cString(ssid || 'YOUR_WIFI_NAME')}";
 const char* WIFI_PASSWORD = "${cString(password || 'YOUR_WIFI_PASSWORD')}";
 const char* SERVER_URL    = "${cString(server)}";
 const char* DEVICE_KEY    = "${cString(key)}";   // empty = no key (an unprotected server)
-const unsigned long CHECK_EVERY_MS = ${server.startsWith('https') ? '30000' : '5000 '};   // check-in for commands; the 1 h 30 min reading schedule is fixed on the server
+const unsigned long RETRY_MS = 60000;   // after a failed send, try again in 1 minute
 
 #define DHT_PIN    27   // DHT11 data (S / OUT). If nothing answers here, the code looks on other pins at start.
-#define LED_PIN    26   // LED + (long leg) through 220 ohm; LED - to GND
-#define BUZZER_PIN 25   // buzzer + (buzzer - to GND)
 #define SDA_PIN    33   // I2C data: OLED SDA and CCS811 SDA
 #define SCL_PIN    32   // I2C clock: OLED SCL and CCS811 SCL
-// Pins tried when the DHT11 does not answer on DHT_PIN (never the I2C, LED or buzzer pins).
+// Pins tried when the DHT11 does not answer on DHT_PIN (never the I2C pins).
 const int DHT_SEARCH[] = { DHT_PIN, 27, 4, 13, 14, 15, 18, 19, 21, 22, 23, 5 };
 DHT* dht = nullptr;
 int dhtPin = DHT_PIN;
@@ -46,14 +44,12 @@ int dhtFails = 0;
 Adafruit_CCS811 ccs;                          // I2C: SDA = GPIO 33, SCL = GPIO 32, WAK and ADD -> GND
 Adafruit_SSD1306 oled(128, 64, &Wire, -1);    // OLED on the same I2C bus, address 0x3C
 bool hasOled = false;
-unsigned long lastScreen = 0;
+unsigned long lastScreen = 0, lastDhtRead = 0;
 void showStatus(const char* line1, const char* line2 = "");   // defined further down
-int lastCode = 0;             // the server's last answer (201 = reading saved, 200 = checked in)
+int lastCode = 0;             // the server's last answer (201 = reading saved, 200 = slot already had one)
 uint16_t eco2 = 400, tvoc = 0;
-String acks = "";             // ids of the commands carried out, sent with the next reading
-String screenMessage = "";    // the dashboard's message for the OLED
-bool ledBlink = false;
 unsigned long lastSend = 0;
+unsigned long waitMs = 0;     // until the next send; 0 = send now (right after power-on)
 
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
@@ -98,10 +94,6 @@ void findDht() {
   dht->begin();
 }
 
-void beep(int times) {
-  for (int i = 0; i < times; i++) { digitalWrite(BUZZER_PIN, HIGH); delay(150); digitalWrite(BUZZER_PIN, LOW); delay(150); }
-}
-
 // A start-up line on the screen ("Wi-Fi...", "DHT11 on GPIO 27"), so it is never black.
 void showStatus(const char* line1, const char* line2) {
   Serial.println(line1);
@@ -129,7 +121,8 @@ void showOnScreen() {
   else oled.printf("Temp %.1f C  Hum %.0f%%", lastT, lastH);
   oled.setCursor(0, 26); oled.printf("eCO2 %u ppm", eco2);
   oled.setCursor(0, 38); oled.printf("TVOC %u ppb", tvoc);
-  oled.setCursor(0, 52); oled.print(screenMessage);
+  oled.setCursor(0, 52);
+  if (lastSend && waitMs > RETRY_MS) oled.printf("next send in %lu min", (waitMs - (millis() - lastSend)) / 60000 + 1);
   oled.display();
 }
 
@@ -147,25 +140,8 @@ void scanI2C() {
   if (!found) Serial.println("  nothing found: check SDA/SCL wires, 3V3 and GND of the OLED and CCS811.");
 }
 
-// One command from the dashboard: beep, led, message or reboot.
-void runCommand(JsonObject cmd) {
-  String type = cmd["type"] | "";
-  if (acks.length()) acks += ",";
-  acks += "\"" + String((const char*)(cmd["id"] | "")) + "\"";
-  if (type == "beep") beep(cmd["value"] | 1);
-  else if (type == "led") {
-    String v = cmd["value"] | "off";
-    ledBlink = (v == "blink");
-    digitalWrite(LED_PIN, v == "on" ? HIGH : LOW);
-  }
-  else if (type == "message") screenMessage = String((const char*)(cmd["value"] | ""));
-  else if (type == "reboot") { Serial.println("Restarting (asked by the dashboard)"); delay(500); ESP.restart(); }
-}
-
 void setup() {
   Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
   Wire.begin(SDA_PIN, SCL_PIN);
   if (!ccs.begin()) Serial.println("CCS811 not found. Check SDA/SCL and WAK -> GND.");
   scanI2C();
@@ -181,14 +157,20 @@ void setup() {
 
 void loop() {
   connectWiFi();
-  if (ledBlink) digitalWrite(LED_PIN, (millis() / 400) % 2);
   if (millis() - lastScreen >= 2000) {
     lastScreen = millis();
     if (ccs.available() && !ccs.readData()) { eco2 = ccs.geteCO2(); tvoc = ccs.getTVOC(); }
+    // The DHT11 is read every 10 s for the screen; a send uses the freshest good value.
+    if (millis() - lastDhtRead >= 10000) {
+      lastDhtRead = millis();
+      float t, h;
+      if (readDht(*dht, t, h)) { lastT = t; lastH = h; lastGoodDht = millis(); dhtFails = 0; }
+    }
     showOnScreen();
   }
-  if (lastSend && millis() - lastSend < CHECK_EVERY_MS) { delay(20); return; }
+  if (lastSend && millis() - lastSend < waitMs) { delay(20); return; }
   lastSend = millis();
+  waitMs = RETRY_MS;          // replaced by the server's answer when the send works
 
   float t, h;
   if (readDht(*dht, t, h)) {
@@ -196,9 +178,9 @@ void loop() {
   } else {
     dhtFails++;
     Serial.printf("DHT11 read failed on GPIO %d (%d in a row).\n", dhtPin, dhtFails);
-    // A short miss: keep sending with the last good values, so the dashboard stays live.
+    // A short miss: send the last good values (read in the last 2 minutes).
     if (!lastGoodDht || millis() - lastGoodDht > 120000UL) {
-      Serial.println("No good DHT11 reading for 2 minutes: nothing sent. Check the wiring, then press EN to restart.");
+      Serial.println("No good DHT11 reading for 2 minutes: nothing sent, trying again in 1 minute. Check the wiring.");
       return;
     }
     t = lastT; h = lastH;
@@ -208,14 +190,12 @@ void loop() {
     tvoc = ccs.getTVOC();
     ccs.setEnvironmentalData(h, t);   // improves the CCS811 estimate
   }
-  showOnScreen();
 
   String body = String("{\"temperature\":") + String(t, 1) +
                 ",\"humidity\":" + String(h, 1) +
                 ",\"eco2\":" + eco2 + ",\"tvoc\":" + tvoc +
                 ",\"deviceId\":\"ESP32-WROOM-32\",\"rssi\":" + WiFi.RSSI() +
-                ",\"uptime\":" + (millis() / 1000) +
-                ",\"acks\":[" + acks + "]}";
+                ",\"uptime\":" + (millis() / 1000) + "}";
 
   HTTPClient http;
   WiFiClientSecure secure;   // for an https:// server (the site online)
@@ -227,18 +207,20 @@ void loop() {
   lastCode = code;
   Serial.printf("Sent %s -> %d\n", body.c_str(), code);
   if (code == 200 || code == 201) {
-    acks = "";
     JsonDocument reply;
-    if (!deserializeJson(reply, http.getString())) {
-      long nextIn = reply["nextIn"] | 0;
-      if (code == 201) Serial.printf("Reading saved. Next one in %ld min.\n", nextIn / 60);
-      else Serial.printf("Checked in (not saved: one reading every 1 h 30 min). Next in %ld min.\n", nextIn / 60);
-      for (JsonObject cmd : reply["commands"].as<JsonArray>()) runCommand(cmd);
-    }
+    long nextIn = 0;
+    if (!deserializeJson(reply, http.getString())) nextIn = reply["nextIn"] | 0;
+    // Wait for the next 1 h 30 min slot (plus 5 s, so the send lands inside it).
+    waitMs = (nextIn > 0 && nextIn <= 5400) ? (unsigned long)nextIn * 1000UL + 5000UL : 5400000UL;
+    if (code == 201) Serial.printf("Reading saved. Next one in %lu min.\n", waitMs / 60000);
+    else Serial.printf("This 1 h 30 min slot already has a reading. Next one in %lu min.\n", waitMs / 60000);
   } else if (code == 401) {
     Serial.println("The server refused the device key. Copy the code again from Connect device.");
+  } else {
+    Serial.println("Send failed: trying again in 1 minute.");
   }
   http.end();
+  showOnScreen();
 }
 `;
 }
@@ -315,7 +297,6 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
     ['DHT11 +', '3V3'], ['DHT11 S / OUT', 'GPIO 27'], ['DHT11 −', 'GND'],
     ['CCS811 VCC', '3V3'], ['CCS811 GND', 'GND'], ['CCS811 SDA', 'GPIO 33'], ['CCS811 SCL', 'GPIO 32'], ['CCS811 WAK', 'GND'], ['CCS811 ADD', 'GND'],
     ['OLED VCC', '3V3'], ['OLED GND', 'GND'], ['OLED SDA', 'GPIO 33'], ['OLED SCL', 'GPIO 32'],
-    ['LED + (220 Ω)', 'GPIO 26'], ['LED −', 'GND'], ['Buzzer +', 'GPIO 25'], ['Buzzer −', 'GND'],
   ];
   const fresh = seen !== null && now - seen < 60000;
 
