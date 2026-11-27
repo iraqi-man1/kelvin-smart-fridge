@@ -10,22 +10,21 @@ import { isDue, nextSlot, READING_EVERY, slotStart } from '../server/schedule.mj
 
 const at = iso => Date.parse(iso);
 
-test('slots are 90 minutes from local midnight, in the chosen time zone', () => {
-  // Baghdad is UTC+3: 10:40 local (07:40 UTC) is in the 10:30–12:00 slot.
-  assert.equal(slotStart(at('2026-11-27T07:40:00Z'), 'Asia/Baghdad'), at('2026-11-27T07:30:00Z'));
-  assert.equal(nextSlot(at('2026-11-27T07:40:00Z'), 'Asia/Baghdad'), at('2026-11-27T09:00:00Z'));
-  // Kuala Lumpur is UTC+8: local midnight 16:00 UTC starts a slot; 01:29 local is still in it.
-  assert.equal(slotStart(at('2026-11-27T17:29:00Z'), 'Asia/Kuala_Lumpur'), at('2026-11-27T16:00:00Z'));
-  assert.equal(slotStart(at('2026-11-27T17:30:00Z'), 'Asia/Kuala_Lumpur'), at('2026-11-27T17:30:00Z'));
-  // 16 slots a day.
-  assert.equal(86400000 / READING_EVERY, 16);
+test('slots are one minute long, from the start of each local minute', () => {
+  // Baghdad is UTC+3: 10:40:25 local is in the 10:40 slot; the next starts at 10:41.
+  assert.equal(slotStart(at('2026-11-27T07:40:25Z'), 'Asia/Baghdad'), at('2026-11-27T07:40:00Z'));
+  assert.equal(nextSlot(at('2026-11-27T07:40:25Z'), 'Asia/Baghdad'), at('2026-11-27T07:41:00Z'));
+  // Kuala Lumpur (UTC+8): local midnight starts a slot.
+  assert.equal(slotStart(at('2026-11-27T16:00:59Z'), 'Asia/Kuala_Lumpur'), at('2026-11-27T16:00:00Z'));
+  // 1,440 slots a day: about 43,000 requests a month, well inside the free hosting plan.
+  assert.equal(86400000 / READING_EVERY, 1440);
 });
 
 test('only the first reading of each slot is due', () => {
   const tz = 'Asia/Baghdad';
-  assert.equal(isDue(at('2026-11-27T07:31:00Z'), undefined, tz), true);
-  assert.equal(isDue(at('2026-11-27T08:59:59Z'), at('2026-11-27T07:31:00Z'), tz), false);
-  assert.equal(isDue(at('2026-11-27T09:00:05Z'), at('2026-11-27T07:31:00Z'), tz), true);
+  assert.equal(isDue(at('2026-11-27T07:31:02Z'), undefined, tz), true);
+  assert.equal(isDue(at('2026-11-27T07:31:59Z'), at('2026-11-27T07:31:02Z'), tz), false);
+  assert.equal(isDue(at('2026-11-27T07:32:01Z'), at('2026-11-27T07:31:02Z'), tz), true);
 });
 
 test('the dashboard has no device commands any more', async () => {
@@ -46,14 +45,14 @@ test('the server keeps one reading per slot; a second send in the same slot is n
     assert.equal(first.status, 201);
     const a = await first.json();
     assert.equal(a.saved, true);
-    assert.ok(a.nextIn > 0 && a.nextIn <= 5400);
+    assert.ok(a.nextIn > 0 && a.nextIn <= 60);
     const second = await post();
     assert.equal(second.status, 200);
     const b = await second.json();
     assert.equal(b.saved, false);
     assert.equal(b.reading, undefined);
     assert.equal(b.commands, undefined);
-    assert.ok(b.nextIn > 0 && b.nextIn <= 5400);
+    assert.ok(b.nextIn > 0 && b.nextIn <= 60);
   } finally {
     server.close();
     await app.close();

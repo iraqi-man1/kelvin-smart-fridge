@@ -378,7 +378,7 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
           try {
             const data = await jsonBody(req);
             const reading = normalizeReading(data);
-            // Fixed schedule: only the first reading of each 90-minute slot is kept (a device that
+            // Fixed schedule: only the first reading of each one-minute slot is kept (a device that
             // restarts mid-slot may send a second one; it is not saved). The reply says when the next is due.
             const last = serverless ? (await store.recentReadings(1))[0] : readings.at(-1);
             const saved = isDue(reading.timestamp, last?.timestamp);

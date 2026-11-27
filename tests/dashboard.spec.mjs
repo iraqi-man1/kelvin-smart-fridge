@@ -64,7 +64,7 @@ test('real device data is validated, converted, and kept separate from demo data
   const invalid = await request.post('/api/readings', { data: { temperature: 25, humidity: 101, eco2: 600, tvoc: 30 } });
   expect(invalid.status()).toBe(400);
   const before = (await (await request.get('/api/readings')).json()).readings.length;
-  // Fixed schedule: one reading per 90-minute slot is kept (201); later check-ins get 200.
+  // Fixed schedule: one reading per minute is kept (201); a second send in the same minute gets 200.
   const posted = [];
   for (let i = 0; i < 3; i++) posted.push(await request.post('/api/readings', { data: { temperature: 23 + i, humidity: 42 + i, eco2: 650 + i * 10, tvoc: 40 + i, rssi: -60, deviceId: 'ESP32-WROOM-32' } }));
   for (const response of posted.slice(1)) expect(response.status()).toBe(200);

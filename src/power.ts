@@ -1,4 +1,4 @@
-import { CHECK_IN_SECONDS, isAlert, READING_EVERY } from './data';
+import { CHECK_IN_SECONDS, isAlert, OFF_GAP } from './data';
 import type { Reading, Settings } from './types';
 
 /**
@@ -21,8 +21,8 @@ export const parts: Part[] = [
   { id: 'oled', kind: 'always', mA: 10 },
 ];
 
-// Readings come every 1 h 30 min (fixed); further apart means the system was off or offline.
-const GAP = READING_EVERY + 15 * 60000;
+// Readings come every minute (fixed); further apart means the system was off or offline.
+const GAP = OFF_GAP;
 
 export type Usage = { hours: number; sends: number; alertHours: number; mAh: Record<string, number> };
 

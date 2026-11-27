@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { forecast, forecastAt, smoothPath, type Forecast } from './forecast';
-import { exceeds, fmt, limitFor, metricInfo, metrics, READING_EVERY, shortTime, timeFormat } from './data';
-
-// One reading every 1 h 30 min: the line is broken only where a reading is missing.
-const LINE_GAP = READING_EVERY + 15 * 60000;
+import { forecast, forecastAt, gapFor, smoothPath, type Forecast } from './forecast';
+import { exceeds, fmt, limitFor, metricInfo, metrics, shortTime, timeFormat } from './data';
 import { useT } from './i18n';
 import type { Metric, Reading, Settings } from './types';
 
@@ -75,11 +72,9 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
   const aheadLabel = t.chart.ahead(Math.round(horizon / 60000));
   // The earlier period, moved forward onto this period's time axis.
   const before = useMemo(() => compare ? compare.data.map(r => ({ ...r, timestamp: r.timestamp + compare.offset })).filter(r => r.timestamp >= start && r.timestamp <= end) : [], [compare, start, end]);
-  const beforeGap = useMemo(() => {
-    if (before.length < 2) return LINE_GAP;
-    const steps = before.slice(1).map((r, i) => r.timestamp - before[i].timestamp).sort((a, b) => a - b);
-    return Math.max(LINE_GAP, steps[Math.floor(steps.length / 2)] * 3);
-  }, [before]);
+  // The line breaks only where readings are missing (the allowed gap grows for averaged data).
+  const beforeGap = useMemo(() => gapFor(before), [before]);
+  const dataGap = useMemo(() => gapFor(data), [data]);
   const beforeAt = (tm: number) => {
     let best: Reading | null = null;
     for (const r of before) if (!best || Math.abs(r.timestamp - tm) < Math.abs(best.timestamp - tm)) best = r;
@@ -114,7 +109,7 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
       const limit = limitFor(metric, settings);
       const limitVisible = data.length > 0 && limit >= domain.min && limit <= domain.max;
       // Break the line where the device was silent, rather than drawing through the gap.
-      const path = data.map((r, i) => `${i && r.timestamp - data[i - 1].timestamp < LINE_GAP ? 'L' : 'M'}${x(r.timestamp).toFixed(1)},${y(r[metric]).toFixed(1)}`).join('');
+      const path = data.map((r, i) => `${i && r.timestamp - data[i - 1].timestamp < dataGap ? 'L' : 'M'}${x(r.timestamp).toFixed(1)},${y(r[metric]).toFixed(1)}`).join('');
       const ahead = future && fc && hover ? forecastAt(fc, Math.min(hover.t, fc.points.at(-1)!.t)) : null;
       const value = future ? ahead?.v : shown?.[metric];
       const last = fc?.points.at(-1);
@@ -166,7 +161,7 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
             ? <circle cx={x(data[0].timestamp)} cy={y(data[0][metric])} r="4" fill={info.color}/>
             : <>
               <path d={path} fill="none" stroke={info.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
-              {/* Each saved reading (one every 1 h 30 min) as a small dot on the line. */}
+              {/* Each reading as a small dot on the line, when there are few enough to see. */}
               {data.length <= 200 && data.map(r => <circle key={r.id} cx={x(r.timestamp)} cy={y(r[metric])} r="2" fill={info.color}/>)}
             </>}
           {hover && <line className="cursor-line" x1={x(hover.t)} x2={x(hover.t)} y1={0} y2={rowH}/>}

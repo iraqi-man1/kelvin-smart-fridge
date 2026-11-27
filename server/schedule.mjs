@@ -1,10 +1,10 @@
 /**
- * The fixed reading schedule: one saved reading every 90 minutes, on the same clock times
- * every day (00:00, 01:30, 03:00 … 22:30 in KELVIN_TIMEZONE). Nobody can change it from the
- * dashboard or the device: the device checks in often, and the server keeps only the first
- * reading of each 90-minute slot.
+ * The fixed reading schedule: one saved reading every minute, at the start of each clock minute
+ * in KELVIN_TIMEZONE. Nobody can change it from the dashboard or the device: the server keeps
+ * only the first reading of each minute and tells the device when the next one is due.
+ * (Kept to once a minute so the free hosting plan's monthly limits are not reached.)
  */
-export const READING_EVERY = 90 * 60000;
+export const READING_EVERY = 60000;
 const TZ = process.env.KELVIN_TIMEZONE || 'Asia/Kuala_Lumpur';
 
 /** The time zone's offset from UTC at that moment, in ms (Baghdad +3 h = 10 800 000). */
@@ -16,7 +16,7 @@ function offsetAt(ts, timeZone) {
   return local - Math.floor(ts / 1000) * 1000;
 }
 
-/** When the slot holding `ts` began (a multiple of 90 minutes from local midnight). */
+/** When the slot holding `ts` began (a multiple of READING_EVERY from local midnight). */
 export function slotStart(ts, timeZone = TZ) {
   const offset = offsetAt(ts, timeZone);
   return Math.floor((ts + offset) / READING_EVERY) * READING_EVERY - offset;

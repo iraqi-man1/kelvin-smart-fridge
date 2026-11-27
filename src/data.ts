@@ -2,9 +2,11 @@ import type { Currency, Lang, Metric, Reading, Settings } from './types';
 
 export const metrics: Metric[] = ['temperature', 'humidity', 'eco2', 'tvoc'];
 
-/** Fixed: the server keeps one reading every 1 h 30 min (server/schedule.mjs). Nobody can change it. */
-export const READING_EVERY = 90 * 60000;
-/** How often the ESP32 sends (and switches its Wi-Fi radio to transmit): once a reading, every 1 h 30 min. */
+/** Fixed: the server keeps one reading every minute (server/schedule.mjs). Nobody can change it. */
+export const READING_EVERY = 60000;
+/** Readings further apart than this mean the device was off or offline (the line breaks there). */
+export const OFF_GAP = 5 * 60000;
+/** How often the ESP32 sends (and switches its Wi-Fi radio to transmit): once a reading, every minute. */
 export const CHECK_IN_SECONDS = READING_EVERY / 1000;
 /** The dashboard asks the server for new readings this often. */
 export const POLL_MS = 30000;
@@ -36,35 +38,38 @@ function demoValues(i: number, doorOpen: boolean) {
   };
 }
 
-/** Demo: a week of readings, one every 1 h 30 min like the real device. */
-export function createDemoHistory(): Reading[] {
-  const last = Math.floor(Date.now() / READING_EVERY) * READING_EVERY;
-  const count = 7 * 16;
-  return Array.from({ length: count + 1 }, (_, i) => ({
-    id: `demo-${i}`, timestamp: last - (count - i) * READING_EVERY,
-    // One reading with the door left open, so the alert parts draw too.
-    ...demoValues(i, i === count - 20),
-    deviceId: 'ESP32-DEMO', rssi: -54, uptime: 86400 + i * 5400,
-  }));
+// Demo values follow the clock (the same moment always gives the same values), with slow waves.
+const WAVE = 90 * 60000;
+const demoAt = (t: number, doorOpen = false) => demoValues(t / WAVE, doorOpen);
+
+/** Demo: the last 24 hours, one reading a minute like the real device (or `count` readings `step` apart). */
+export function createDemoHistory(step = READING_EVERY, count = 24 * 60): Reading[] {
+  const last = Math.floor(Date.now() / step) * step;
+  return Array.from({ length: count + 1 }, (_, i) => {
+    const timestamp = last - (count - i) * step;
+    // A few minutes with the door left open, so the alert parts draw too.
+    return { id: `demo-${timestamp}`, timestamp, ...demoAt(timestamp, i >= count - 200 && i < count - 190), deviceId: 'ESP32-DEMO', rssi: -54, uptime: 86400 + Math.round(i * step / 1000) };
+  });
 }
 
-/** Demo readings for any earlier period (for comparison): one every 1 h 30 min, a little different from today. */
-export function demoRange(from: number, to: number): Reading[] {
+/** Demo readings for any period, at most about 400 points (long periods are thinned like the server's averages). */
+export function demoRange(from: number, to: number, shift = 0): Reading[] {
+  const step = Math.max(READING_EVERY, Math.ceil((to - from) / 400 / READING_EVERY) * READING_EVERY);
   const out: Reading[] = [];
-  for (let t = Math.ceil(from / READING_EVERY) * READING_EVERY; t <= to; t += READING_EVERY) {
-    const v = demoValues(t / READING_EVERY + 11, false);
-    out.push({ id: `demo-cmp-${t}`, timestamp: t, ...v, temperature: v.temperature - 1, deviceId: 'ESP32-DEMO' });
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) {
+    const v = demoAt(t + shift);
+    out.push({ id: `demo-r-${t}`, timestamp: t, ...v, temperature: v.temperature - (shift ? 1 : 0), deviceId: 'ESP32-DEMO' });
   }
   return out;
 }
 
-/** The demo's next reading once a new 1 h 30 min slot starts, else null. */
+/** The demo's next reading once a new minute starts, else null. */
 export function nextDemoReading(previous: Reading): Reading | null {
   const slot = Math.floor(Date.now() / READING_EVERY) * READING_EVERY;
   if (slot <= previous.timestamp) return null;
   return {
     ...previous, id: `demo-${slot}`, timestamp: slot,
-    ...demoValues(slot / READING_EVERY, false),
+    ...demoAt(slot),
     uptime: (previous.uptime ?? 0) + Math.round((slot - previous.timestamp) / 1000),
   };
 }

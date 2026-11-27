@@ -1,4 +1,4 @@
-import { limitFor, READING_EVERY } from './data';
+import { limitFor, OFF_GAP } from './data';
 import type { Metric, Reading, Settings } from './types';
 
 /**
@@ -11,8 +11,13 @@ export type Forecast = { points: ForecastPoint[]; slopePerHour: number; crossesA
 
 // What each sensor can physically report, so a forecast never shows impossible values.
 const RANGE: Record<Metric, [number, number]> = { temperature: [-40, 125], humidity: [0, 100], eco2: [400, 8192], tvoc: [0, 1187] };
-// Readings come every 1 h 30 min; a longer gap means the device was off.
-const GAP = READING_EVERY + 15 * 60000;
+// Readings come every minute; a longer gap means the device was off. Long periods arrive as
+// averages (one point per several minutes), so the allowed gap grows with the usual spacing.
+export function gapFor(readings: Reading[]) {
+  if (readings.length < 3) return OFF_GAP;
+  const steps = readings.slice(1).map((r, i) => r.timestamp - readings[i].timestamp).sort((a, b) => a - b);
+  return Math.max(OFF_GAP, steps[Math.floor(steps.length / 2)] * 3);
+}
 
 /** How far ahead to look for each chart period (24 h → 6 h, 3 days → 12 h, 7 days → 24 h). */
 export const horizonFor = (periodHours: number) => (periodHours <= 24 ? 6 : periodHours <= 72 ? 12 : 24) * 3600000;
@@ -21,8 +26,9 @@ export function forecast(readings: Reading[], metric: Metric, horizon: number, s
   if (readings.length < 6) return null;
   const end = readings.at(-1)!.timestamp;
   // Learn from the last stretch without gaps, about twice as long as we look ahead.
+  const gap = gapFor(readings.slice(-200));
   let from = readings.length - 1;
-  while (from > 0 && end - readings[from - 1].timestamp <= horizon * 2 && readings[from].timestamp - readings[from - 1].timestamp <= GAP) from--;
+  while (from > 0 && end - readings[from - 1].timestamp <= horizon * 2 && readings[from].timestamp - readings[from - 1].timestamp <= gap) from--;
   const sample = readings.slice(from);
   if (sample.length < 6) return null;
 

@@ -12,7 +12,7 @@ const cString = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 /** The whole Arduino sketch, with this user's Wi-Fi, server address and device key filled in. */
 export function sketch(ssid: string, password: string, server: string, key = '') {
   return String.raw`// Kelvin — ESP32 + DHT11 + CCS811 + OLED
-// One reading is sent every 1 h 30 min, on fixed times (00:00, 01:30, 03:00 ...).
+// One reading is sent every minute, at the start of each minute (the server sets the schedule).
 // The server says when the next one is due; the OLED shows live values in between.
 // Libraries: DHT sensor library, Adafruit CCS811, Adafruit SSD1306 (+ GFX), ArduinoJson.
 #include <WiFi.h>
@@ -29,7 +29,7 @@ const char* WIFI_NAME     = "${cString(ssid || 'YOUR_WIFI_NAME')}";
 const char* WIFI_PASSWORD = "${cString(password || 'YOUR_WIFI_PASSWORD')}";
 const char* SERVER_URL    = "${cString(server)}";
 const char* DEVICE_KEY    = "${cString(key)}";   // empty = no key (an unprotected server)
-const unsigned long RETRY_MS = 60000;   // after a failed send, try again in 1 minute
+const unsigned long RETRY_MS = 20000;   // after a failed send, try again in 20 seconds
 
 #define DHT_PIN    27   // DHT11 data (S / OUT). If nothing answers here, the code looks on other pins at start.
 #define SDA_PIN    33   // I2C data: OLED SDA and CCS811 SDA
@@ -122,7 +122,7 @@ void showOnScreen() {
   oled.setCursor(0, 26); oled.printf("eCO2 %u ppm", eco2);
   oled.setCursor(0, 38); oled.printf("TVOC %u ppb", tvoc);
   oled.setCursor(0, 52);
-  if (lastSend && waitMs > RETRY_MS) oled.printf("next send in %lu min", (waitMs - (millis() - lastSend)) / 60000 + 1);
+  if (lastSend && waitMs > RETRY_MS && millis() - lastSend < waitMs) oled.printf("next send in %lu s", (waitMs - (millis() - lastSend)) / 1000 + 1);
   oled.display();
 }
 
@@ -180,7 +180,7 @@ void loop() {
     Serial.printf("DHT11 read failed on GPIO %d (%d in a row).\n", dhtPin, dhtFails);
     // A short miss: send the last good values (read in the last 2 minutes).
     if (!lastGoodDht || millis() - lastGoodDht > 120000UL) {
-      Serial.println("No good DHT11 reading for 2 minutes: nothing sent, trying again in 1 minute. Check the wiring.");
+      Serial.println("No good DHT11 reading for 2 minutes: nothing sent, trying again in 20 seconds. Check the wiring.");
       return;
     }
     t = lastT; h = lastH;
@@ -210,14 +210,14 @@ void loop() {
     JsonDocument reply;
     long nextIn = 0;
     if (!deserializeJson(reply, http.getString())) nextIn = reply["nextIn"] | 0;
-    // Wait for the next 1 h 30 min slot (plus 5 s, so the send lands inside it).
-    waitMs = (nextIn > 0 && nextIn <= 5400) ? (unsigned long)nextIn * 1000UL + 5000UL : 5400000UL;
-    if (code == 201) Serial.printf("Reading saved. Next one in %lu min.\n", waitMs / 60000);
-    else Serial.printf("This 1 h 30 min slot already has a reading. Next one in %lu min.\n", waitMs / 60000);
+    // Wait for the next slot the server names (plus 2 s, so the send lands inside it).
+    waitMs = (nextIn > 0 && nextIn <= 86400) ? (unsigned long)nextIn * 1000UL + 2000UL : 60000UL;
+    if (code == 201) Serial.printf("Reading saved. Next one in %lu s.\n", waitMs / 1000);
+    else Serial.printf("This minute already has a reading. Next one in %lu s.\n", waitMs / 1000);
   } else if (code == 401) {
     Serial.println("The server refused the device key. Copy the code again from Connect device.");
   } else {
-    Serial.println("Send failed: trying again in 1 minute.");
+    Serial.println("Send failed: trying again in 20 seconds.");
   }
   http.end();
   showOnScreen();
@@ -264,12 +264,11 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
   // On the last step, watch the server for the device's readings.
   useEffect(() => {
     if (step !== last) return;
-    // A check-in shows the device is talking to the server; a reading is kept only once
-    // every 1 h 30 min, so the last saved one may be older.
+    // A check-in shows the device is talking to the server; a reading is kept once a minute.
     const poll = () => {
       if (document.hidden) return;
       api.device().then(d => setSeen(d.lastSeen ?? null)).catch(() => {});
-      fetch(`/api/readings?since=${Date.now() - 2 * 5400000}`).then(r => r.json()).then(b => { setLatest(b.readings?.at(-1) ?? null); setNow(Date.now()); }).catch(() => {});
+      fetch(`/api/readings?since=${Date.now() - 10 * 60000}`).then(r => r.json()).then(b => { setLatest(b.readings?.at(-1) ?? null); setNow(Date.now()); }).catch(() => {});
     };
     poll();
     const id = setInterval(poll, 3000);

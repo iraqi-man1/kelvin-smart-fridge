@@ -18,7 +18,7 @@ function strength(p: string) {
 /** A small live-looking Kelvin widget, drawn from the same demo data the dashboard uses. */
 function ReadoutCard() {
   const { t } = useT();
-  const history = useMemo(() => createDemoHistory().slice(-36), []);
+  const history = useMemo(() => createDemoHistory(90 * 60000, 36), []);
   const last = history.at(-1)!;
   const temps = history.map(r => r.temperature);
   const lo = Math.min(...temps) - 1, hi = Math.max(...temps) + 1;

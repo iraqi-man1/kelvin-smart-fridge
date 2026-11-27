@@ -8,7 +8,7 @@ import { AuditPage } from './AuditPage';
 import { horizonFor } from './forecast';
 import {
   createDemoHistory, currencies, dateFormat, defaults, exceeds, fmt, formatEnergy, formatMoney, formatUptime, isAlert, limitFor,
-  demoRange, metricInfo, metrics, nextDemoReading, POLL_MS, READING_EVERY, sanitizeSettings, shortTime, timeFormat,
+  demoRange, metricInfo, metrics, nextDemoReading, OFF_GAP, POLL_MS, READING_EVERY, sanitizeSettings, shortTime, timeFormat,
 } from './data';
 import { AccountPage, Avatar } from './Account';
 import { api, canManage, type Prefs, type User } from './accountApi';
@@ -134,20 +134,36 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   const readings = mode === 'demo' ? demo : live;
   const latest = readings.at(-1);
   const previous = readings.at(-2);
-  // One reading is kept every 1 h 30 min (fixed), so the last one stays current until the
-  // next is due, with 10 minutes' grace.
-  const fresh = Boolean(latest && now - latest.timestamp < READING_EVERY + 600000);
+  // One reading is kept every minute (fixed); the device counts as offline after a few missed.
+  const fresh = Boolean(latest && now - latest.timestamp < OFF_GAP);
   const connected = mode === 'demo' || (fresh && !error);
   const exceeded = latest ? metrics.filter(m => exceeds(m, latest[m], settings)) : [];
   const energy = useEnergy(readings, settings, now);
-  const chartData = useMemo(() => readings.filter(r => r.timestamp >= now - period * 3600000), [readings, period, now]);
+  // 24 hours fit in the readings kept on the page (one a minute). Longer periods come from the
+  // server as averages (about 400 points), fetched again once a minute.
+  const [longData, setLongData] = useState<Reading[]>([]);
+  const longMinute = Math.floor(now / 60000);
+  useEffect(() => {
+    if (period <= 24) { setLongData([]); return; }
+    const to = longMinute * 60000 + 60000, from = to - period * 3600000;
+    if (mode === 'demo') { setLongData(demoRange(from, to)); return; }
+    let live = true;
+    api.readingsRange(from, to, 400).then(r => { if (live) setLongData(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [period, longMinute, mode]);
+  const chartData = useMemo(() => {
+    const from = now - period * 3600000;
+    if (period <= 24) return readings.filter(r => r.timestamp >= from);
+    const lastAvg = longData.at(-1)?.timestamp ?? from;
+    return [...longData.filter(r => r.timestamp >= from), ...readings.filter(r => r.timestamp > lastAvg)];
+  }, [readings, longData, period, now]);
   const compareOffset = compareWith === 'prev' ? period * 3600000 : compareWith === 'day' ? 86400000 : compareWith === 'week' ? 7 * 86400000 : 0;
   // The earlier period is fetched again once a minute (it moves with "now"), not every second.
   const minute = Math.floor(now / 60000);
   useEffect(() => {
     if (!compareOffset) { setCompareData([]); return; }
     const to = minute * 60000 + 60000 - compareOffset, from = to - period * 3600000 - 60000;
-    if (mode === 'demo') { setCompareData(demoRange(from, to)); return; }
+    if (mode === 'demo') { setCompareData(demoRange(from, to, 1)); return; }
     let live = true;
     api.readingsRange(from, to, 300).then(r => { if (live) setCompareData(r); }).catch(() => { if (live) setCompareData([]); });
     return () => { live = false; };
