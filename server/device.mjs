@@ -7,6 +7,7 @@ const SEEN_EVERY = 60000; // "key last used" is saved at most once a minute
 
 /**
  * Commands the dashboard can send to the ESP32, and what each accepts.
+ * The reading schedule is fixed (every 90 minutes, server/schedule.mjs), so it is not a command.
  * They reach the device in the reply to its next reading; it confirms them in the reading after.
  */
 export const COMMANDS = {
@@ -14,7 +15,6 @@ export const COMMANDS = {
   led: v => ['on', 'off', 'blink'].includes(v),
   // The SSD1306's built-in font has only plain ASCII letters.
   message: v => typeof v === 'string' && /^[\x20-\x7E]{1,40}$/.test(v),
-  interval: v => Number.isInteger(v) && v >= 2 && v <= 60,
   reboot: v => v === undefined || v === null,
 };
 

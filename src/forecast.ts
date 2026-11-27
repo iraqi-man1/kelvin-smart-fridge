@@ -1,4 +1,4 @@
-import { limitFor } from './data';
+import { limitFor, READING_EVERY } from './data';
 import type { Metric, Reading, Settings } from './types';
 
 /**
@@ -11,10 +11,11 @@ export type Forecast = { points: ForecastPoint[]; slopePerHour: number; crossesA
 
 // What each sensor can physically report, so a forecast never shows impossible values.
 const RANGE: Record<Metric, [number, number]> = { temperature: [-40, 125], humidity: [0, 100], eco2: [400, 8192], tvoc: [0, 1187] };
-const GAP = 10 * 60000;
+// Readings come every 1 h 30 min; a longer gap means the device was off.
+const GAP = READING_EVERY + 15 * 60000;
 
-/** How far ahead to look for each chart period (1 h → 15 min, 6 h → 1 h, 24 h → 3 h). */
-export const horizonFor = (periodHours: number) => (periodHours <= 1 ? 15 : periodHours <= 6 ? 60 : 180) * 60000;
+/** How far ahead to look for each chart period (24 h → 6 h, 3 days → 12 h, 7 days → 24 h). */
+export const horizonFor = (periodHours: number) => (periodHours <= 24 ? 6 : periodHours <= 72 ? 12 : 24) * 3600000;
 
 export function forecast(readings: Reading[], metric: Metric, horizon: number, settings: Settings, steps = 36): Forecast | null {
   if (readings.length < 6) return null;

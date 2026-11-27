@@ -18,7 +18,6 @@ export type Settings = {
   humidityMax: number;
   eco2Max: number;
   tvocMax: number;
-  interval: number;
   supplyVoltage: number;
   tariff: number;
   currency: Currency;

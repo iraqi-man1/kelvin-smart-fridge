@@ -8,6 +8,7 @@ import { createMailer } from './mailer.mjs';
 import { createSupport, SupportError } from './support.mjs';
 import { createActivity } from './activity.mjs';
 import { createSecurity, DEVICE_COOKIE, DEVICE_DAYS } from './security.mjs';
+import { isDue, nextSlot, READING_EVERY } from './schedule.mjs';
 
 /**
  * Kelvin's API, shared by the local server (server.mjs) and the Netlify function
@@ -342,6 +343,7 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
         return reply(200, {
           ingestUrl, sensors: ['DHT11', 'CCS811'], units: { eco2: 'ppm', tvoc: 'ppb' }, hosting: serverless ? 'netlify' : 'local',
           storage: { kind: store.kind, label: storageLabel, readings: await store.countReadings() },
+          schedule: { every: READING_EVERY },
           // For the "How the system works" page: what is connected right now.
           system: {
             deviceProtected: d.protected, deviceLastSeen: d.lastSeen, lastReading: lastReading?.timestamp ?? null,
@@ -389,13 +391,23 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
           try {
             const data = await jsonBody(req);
             const reading = normalizeReading(data);
-            await store.insertReading(reading);
-            if (!serverless) readings = [...readings, reading].slice(-2000);
-            // Finished before replying: on Netlify the function may stop right after the reply.
-            await alerts.check(reading);
+            // Fixed schedule: only the first reading of each 90-minute slot is kept. The device
+            // checks in more often than that (to pick up commands); the rest are not saved.
+            const last = serverless ? (await store.recentReadings(1))[0] : readings.at(-1);
+            const saved = isDue(reading.timestamp, last?.timestamp);
+            if (saved) {
+              await store.insertReading(reading);
+              if (!serverless) readings = [...readings, reading].slice(-2000);
+              // Finished before replying: on Netlify the function may stop right after the reply.
+              await alerts.check(reading);
+            }
             await device.acknowledge(data.acks);
-            // Commands from the dashboard ride back on the reply.
-            return reply(201, { ok: true, reading, commands: await device.deliver() });
+            const next = nextSlot(reading.timestamp);
+            // Commands from the dashboard ride back on the reply, saved or not.
+            return reply(saved ? 201 : 200, {
+              ok: true, saved, ...(saved ? { reading } : {}), nextAt: next, nextIn: Math.ceil((next - reading.timestamp) / 1000),
+              commands: await device.deliver(),
+            });
           } catch (error) {
             if (error instanceof TooLarge) return reply(413, { error: 'Payload too large.' });
             return reply(error.code ? 500 : 400, { error: error.code ? 'Unable to save reading.' : error.message });

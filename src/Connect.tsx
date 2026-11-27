@@ -12,7 +12,8 @@ const cString = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 /** The whole Arduino sketch, with this user's Wi-Fi, server address and device key filled in. */
 export function sketch(ssid: string, password: string, server: string, key = '') {
   return String.raw`// Kelvin — ESP32 + DHT11 + CCS811 + OLED + LED + buzzer
-// Sends the readings every few seconds and carries out the dashboard's commands.
+// The server keeps one reading every 1 h 30 min, on fixed times (00:00, 01:30, 03:00 ...).
+// The device checks in more often only to pick up the dashboard's commands.
 // Libraries: DHT sensor library, Adafruit CCS811, Adafruit SSD1306 (+ GFX), ArduinoJson.
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -28,7 +29,7 @@ const char* WIFI_NAME     = "${cString(ssid || 'YOUR_WIFI_NAME')}";
 const char* WIFI_PASSWORD = "${cString(password || 'YOUR_WIFI_PASSWORD')}";
 const char* SERVER_URL    = "${cString(server)}";
 const char* DEVICE_KEY    = "${cString(key)}";   // empty = no key (an unprotected server)
-unsigned long sendEveryMs = ${server.startsWith('https') ? '30000' : '5000 '};                 // the dashboard can change this
+const unsigned long CHECK_EVERY_MS = ${server.startsWith('https') ? '30000' : '5000 '};   // check-in for commands; the 1 h 30 min reading schedule is fixed on the server
 
 #define DHT_PIN    27   // DHT11 data (S / OUT). If nothing answers here, the code looks on other pins at start.
 #define LED_PIN    26   // LED + (long leg) through 220 ohm; LED - to GND
@@ -47,7 +48,7 @@ Adafruit_SSD1306 oled(128, 64, &Wire, -1);    // OLED on the same I2C bus, addre
 bool hasOled = false;
 unsigned long lastScreen = 0;
 void showStatus(const char* line1, const char* line2 = "");   // defined further down
-int lastCode = 0;             // the server's last answer (201 = saved)
+int lastCode = 0;             // the server's last answer (201 = reading saved, 200 = checked in)
 uint16_t eco2 = 400, tvoc = 0;
 String acks = "";             // ids of the commands carried out, sent with the next reading
 String screenMessage = "";    // the dashboard's message for the OLED
@@ -122,7 +123,7 @@ void showOnScreen() {
   oled.setTextColor(SSD1306_WHITE);
   oled.setCursor(0, 0);
   oled.print("Kelvin ");
-  oled.print(WiFi.status() == WL_CONNECTED ? (lastCode == 201 ? "online" : "Wi-Fi ok") : "no Wi-Fi");
+  oled.print(WiFi.status() == WL_CONNECTED ? ((lastCode == 200 || lastCode == 201) ? "online" : "Wi-Fi ok") : "no Wi-Fi");
   oled.setCursor(0, 14);
   if (isnan(lastT)) oled.print("Temp --   Hum --");
   else oled.printf("Temp %.1f C  Hum %.0f%%", lastT, lastH);
@@ -146,7 +147,7 @@ void scanI2C() {
   if (!found) Serial.println("  nothing found: check SDA/SCL wires, 3V3 and GND of the OLED and CCS811.");
 }
 
-// One command from the dashboard: beep, led, message, interval or reboot.
+// One command from the dashboard: beep, led, message or reboot.
 void runCommand(JsonObject cmd) {
   String type = cmd["type"] | "";
   if (acks.length()) acks += ",";
@@ -158,7 +159,6 @@ void runCommand(JsonObject cmd) {
     digitalWrite(LED_PIN, v == "on" ? HIGH : LOW);
   }
   else if (type == "message") screenMessage = String((const char*)(cmd["value"] | ""));
-  else if (type == "interval") sendEveryMs = (unsigned long)(cmd["value"] | 5) * 1000UL;
   else if (type == "reboot") { Serial.println("Restarting (asked by the dashboard)"); delay(500); ESP.restart(); }
 }
 
@@ -187,7 +187,7 @@ void loop() {
     if (ccs.available() && !ccs.readData()) { eco2 = ccs.geteCO2(); tvoc = ccs.getTVOC(); }
     showOnScreen();
   }
-  if (millis() - lastSend < sendEveryMs) { delay(20); return; }
+  if (lastSend && millis() - lastSend < CHECK_EVERY_MS) { delay(20); return; }
   lastSend = millis();
 
   float t, h;
@@ -226,10 +226,13 @@ void loop() {
   int code = http.POST(body);
   lastCode = code;
   Serial.printf("Sent %s -> %d\n", body.c_str(), code);
-  if (code == 201) {
+  if (code == 200 || code == 201) {
     acks = "";
     JsonDocument reply;
     if (!deserializeJson(reply, http.getString())) {
+      long nextIn = reply["nextIn"] | 0;
+      if (code == 201) Serial.printf("Reading saved. Next one in %ld min.\n", nextIn / 60);
+      else Serial.printf("Checked in (not saved: one reading every 1 h 30 min). Next in %ld min.\n", nextIn / 60);
       for (JsonObject cmd : reply["commands"].as<JsonArray>()) runCommand(cmd);
     }
   } else if (code == 401) {
@@ -252,6 +255,7 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
   const [copied, setCopied] = useState(false);
   useEffect(() => { if (!copied) return; const id = setTimeout(() => setCopied(false), 2500); return () => clearTimeout(id); }, [copied]);
   const [latest, setLatest] = useState<Reading | null>(null);
+  const [seen, setSeen] = useState<number | null>(null); // the device's last check-in
   const [now, setNow] = useState(Date.now());
   // A new device key lives only in this window: it is shown once and goes into the code.
   const [deviceKey, setDeviceKey] = useState('');
@@ -278,7 +282,13 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
   // On the last step, watch the server for the device's readings.
   useEffect(() => {
     if (step !== last) return;
-    const poll = () => document.hidden ? undefined : fetch(`/api/readings?since=${Date.now() - 600000}`).then(r => r.json()).then(b => { setLatest(b.readings?.at(-1) ?? null); setNow(Date.now()); }).catch(() => {});
+    // A check-in shows the device is talking to the server; a reading is kept only once
+    // every 1 h 30 min, so the last saved one may be older.
+    const poll = () => {
+      if (document.hidden) return;
+      api.device().then(d => setSeen(d.lastSeen ?? null)).catch(() => {});
+      fetch(`/api/readings?since=${Date.now() - 2 * 5400000}`).then(r => r.json()).then(b => { setLatest(b.readings?.at(-1) ?? null); setNow(Date.now()); }).catch(() => {});
+    };
     poll();
     const id = setInterval(poll, 3000);
     return () => clearInterval(id);
@@ -307,7 +317,7 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
     ['OLED VCC', '3V3'], ['OLED GND', 'GND'], ['OLED SDA', 'GPIO 33'], ['OLED SCL', 'GPIO 32'],
     ['LED + (220 Ω)', 'GPIO 26'], ['LED −', 'GND'], ['Buzzer +', 'GPIO 25'], ['Buzzer −', 'GND'],
   ];
-  const fresh = latest && now - latest.timestamp < 60000;
+  const fresh = seen !== null && now - seen < 60000;
 
   return <div className="connect-guide">
     <ol className="stepper" aria-label={c.stepOf(step + 1, c.steps.length)}>
@@ -386,9 +396,9 @@ export function ConnectGuide({ apiUrl, user, onShowLive, notify }: Props) {
       {step === 5 && <>
         <p>{c.checkIntro}</p>
         <div className={`live-check ${fresh ? 'ok' : ''}`}>
-          {fresh && latest ? <>
-            <p><Check size={17}/>{c.arrived(t.ago(Math.max(0, Math.round((now - latest.timestamp) / 1000))))}</p>
-            <p className="mono" dir="ltr">{metrics.map(m => `${fmt(m, latest[m])} ${metricInfo[m].unit}`).join('  ·  ')}</p>
+          {fresh && seen !== null ? <>
+            <p><Check size={17}/>{c.arrived(t.ago(Math.max(0, Math.round((now - seen) / 1000))))}</p>
+            {latest && <p className="mono" dir="ltr">{metrics.map(m => `${fmt(m, latest[m])} ${metricInfo[m].unit}`).join('  ·  ')}</p>}
           </> : <p><span className="pulse-dot" aria-hidden="true"/>{c.waiting}</p>}
         </div>
         <p className="hint">{c.warmup}</p>

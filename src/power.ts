@@ -1,10 +1,10 @@
-import { isAlert } from './data';
+import { CHECK_IN_SECONDS, isAlert, READING_EVERY } from './data';
 import type { Reading, Settings } from './types';
 
 /**
  * How each part draws current:
  * - always:  the whole time the system is on.
- * - reading: a burst of `seconds` for every reading the device sends.
+ * - reading: a burst of `seconds` for every check-in the device sends (every 30 s while on).
  * - alert:   while the latest reading is over a limit, for `duty` of that time.
  */
 export type Part = { id: string; kind: 'always' | 'reading' | 'alert'; mA: number; seconds?: number; duty?: number };
@@ -23,8 +23,8 @@ export const parts: Part[] = [
   { id: 'buzzer', kind: 'alert', mA: 30, duty: 0.5 },
 ];
 
-// Readings further apart than this mean the system was off or offline.
-const GAP = 10 * 60000;
+// Readings come every 1 h 30 min (fixed); further apart means the system was off or offline.
+const GAP = READING_EVERY + 15 * 60000;
 
 export type Usage = { hours: number; sends: number; alertHours: number; mAh: Record<string, number> };
 
@@ -47,20 +47,14 @@ export function usageBetween(readings: Reading[], from: number, to: number, sett
   for (const p of enabled) {
     mAh[p.id] = p.kind === 'always' ? p.mA * on / 3600000
       : p.kind === 'alert' ? p.mA * (p.duty ?? 1) * alertMs / 3600000
-      : p.mA * (p.seconds ?? 0) * sends / 3600;
+      : p.mA * (p.seconds ?? 0) * (on / 1000 / CHECK_IN_SECONDS) / 3600;
   }
   return { hours: on / 3600000, sends, alertHours: alertMs / 3600000, mAh };
 }
 
 export const totalWh = (u: Usage, volts: number) => Object.values(u.mAh).reduce((s, v) => s + v, 0) * volts / 1000;
 
-/** Typical seconds between readings, from the last few the device sent. */
-export function sendInterval(readings: Reading[]) {
-  const gaps = readings.slice(-21).map((r, i, all) => i ? r.timestamp - all[i - 1].timestamp : 0).slice(1).filter(g => g > 0 && g <= GAP).sort((a, b) => a - b);
-  return gaps.length ? gaps[Math.floor(gaps.length / 2)] / 1000 : undefined;
-}
-
-/** Current each part draws right now, averaged over one send interval. */
+/** Current each part draws right now, averaged over one check-in. */
 export function currentNow(latest: Reading | undefined, interval: number, settings: Settings) {
   const alert = latest ? isAlert(latest, settings) : false;
   return parts.filter(p => settings.parts.includes(p.id)).map(p => ({

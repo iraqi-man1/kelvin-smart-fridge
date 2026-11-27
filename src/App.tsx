@@ -8,7 +8,7 @@ import { AuditPage } from './AuditPage';
 import { horizonFor } from './forecast';
 import {
   createDemoHistory, currencies, dateFormat, defaults, exceeds, fmt, formatEnergy, formatMoney, formatUptime, isAlert, limitFor,
-  demoRange, metricInfo, metrics, nextDemoReading, sanitizeSettings, timeFormat,
+  demoRange, metricInfo, metrics, nextDemoReading, POLL_MS, READING_EVERY, sanitizeSettings, shortTime, timeFormat,
 } from './data';
 import { AccountPage, Avatar } from './Account';
 import { api, canManage, type Prefs, type User } from './accountApi';
@@ -60,7 +60,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   const [refreshing, setRefreshing] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
-  const [period, setPeriod] = useState(6);
+  const [period, setPeriod] = useState(24);
   const [showForecast, setShowForecast] = useState(true);
   // Compare the chart with an earlier period: the one just before, yesterday, or last week.
   const [compareWith, setCompareWith] = useState<'off' | 'prev' | 'day' | 'week'>('off');
@@ -126,17 +126,18 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   useEffect(() => {
     if (mode === 'live') fetchLive();
     const id = setInterval(() => {
-      if (mode === 'demo') setDemo(previous => [...previous, nextDemoReading(previous.at(-1)!)].slice(-2000));
+      if (mode === 'demo') setDemo(previous => { const next = nextDemoReading(previous.at(-1)!); return next ? [...previous, next].slice(-2000) : previous; });
       else if (!document.hidden) fetchLive();
-    }, settings.interval * 1000);
+    }, POLL_MS);
     return () => { clearInterval(id); request.current?.abort(); };
-  }, [mode, settings.interval, fetchLive]);
+  }, [mode, fetchLive]);
 
   const readings = mode === 'demo' ? demo : live;
   const latest = readings.at(-1);
   const previous = readings.at(-2);
-  // Online the device sends every 30 s, so a reading counts as live for a while longer.
-  const fresh = Boolean(latest && now - latest.timestamp < Math.max(75000, settings.interval * 3000));
+  // One reading is kept every 1 h 30 min (fixed), so the last one stays current until the
+  // next is due, with 10 minutes' grace.
+  const fresh = Boolean(latest && now - latest.timestamp < READING_EVERY + 600000);
   const connected = mode === 'demo' || (fresh && !error);
   const exceeded = latest ? metrics.filter(m => exceeds(m, latest[m], settings)) : [];
   const energy = useEnergy(readings, settings, now);
@@ -169,7 +170,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
   function navigate(next: Page) { setPage(next); setMobileNav(false); window.scrollTo({ top: 0 }); }
   async function refresh() {
     setRefreshing(true);
-    if (mode === 'demo') setDemo(p => [...p, nextDemoReading(p.at(-1)!)].slice(-2000));
+    if (mode === 'demo') setDemo(p => { const next = nextDemoReading(p.at(-1)!); return next ? [...p, next].slice(-2000) : p; });
     else await fetchLive();
     setTimeout(() => setRefreshing(false), 500);
   }
@@ -269,13 +270,13 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
     </article>;
   })}</div>;
 
-  const compareOptions: (readonly ['off' | 'prev' | 'day' | 'week', string])[] = [['off', t.chart.cmp.off], ['prev', t.chart.cmp.prev], ...(period < 24 ? [['day', t.chart.cmp.day] as const] : []), ['week', t.chart.cmp.week]];
+  const compareOptions: (readonly ['off' | 'prev' | 'day' | 'week', string])[] = [['off', t.chart.cmp.off], ['prev', t.chart.cmp.prev], ...(period < 24 ? [['day', t.chart.cmp.day] as const] : []), ...(period < 168 ? [['week', t.chart.cmp.week] as const] : [])];
   const chart = <section className={`panel chart-panel ${page === 'sensors' ? 'span-all' : 'span-2'}`}>
     <header className="panel-head">
       <div><h2>{t.chart.title}</h2><p>{t.chart.sub}</p></div>
       <div className="chart-controls">
         <label className="fc-toggle"><input type="checkbox" checked={showForecast} onChange={e => setShowForecast(e.target.checked)}/>{t.chart.showForecast}</label>
-        <Segmented label={t.chart.period} value={String(period)} onChange={v => { setPeriod(+v); if (+v >= 24 && compareWith === 'day') setCompareWith('prev'); }} options={[['1', t.chart.h1], ['6', t.chart.h6], ['24', t.chart.h24]]}/>
+        <Segmented label={t.chart.period} value={String(period)} onChange={v => { setPeriod(+v); if ((+v >= 24 && compareWith === 'day') || (+v >= 168 && compareWith === 'week')) setCompareWith('prev'); }} options={[['24', t.chart.h24], ['72', t.chart.d3], ['168', t.chart.d7]]}/>
         <label className="cmp-select"><span>{t.chart.compare}</span>
           <select value={compareWith} onChange={e => setCompareWith(e.target.value as typeof compareWith)}>{compareOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </label>
@@ -389,7 +390,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
       {(DATA_PAGES.includes(page) || page === 'system') && <section className={`status-strip ${status.tone}`} aria-label={t.status.aria}>
         <div><span>{t.status.source}</span><button className="source-button" onClick={openConnect}><i className={`dot ${mode === 'live' ? (connected ? 'on' : 'off') : 'demo'}`}/>{mode === 'demo' ? t.status.demo : t.status.live}</button></div>
         <div><span>{t.status.last}</span><b>{latest ? <><span className="mono" dir="ltr">{timeFormat(latest.timestamp)}</span> <span className="muted">· {t.ago(age)}</span></> : '—'}</b></div>
-        <div><span>{t.status.interval}</span><b><span className="mono">{settings.interval}</span> {t.status.sec}</b></div>
+        <div><span>{t.status.interval}</span><b>{t.status.fixedEvery}{latest && now < latest.timestamp + READING_EVERY && <span className="muted"> · {t.status.next} <span className="mono" dir="ltr">{shortTime(latest.timestamp + READING_EVERY)}</span></span>}</b></div>
         <div className="status-cell"><span>{t.status.state}</span><b>{status.tone !== 'ok' && <CircleAlert size={15}/>}{status.text}</b></div>
       </section>}
 
@@ -435,7 +436,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
         <header className="panel-head">
           <div><h2>{t.alerts.log}</h2><p>{t.alerts.logSub}</p></div>
           <div className="head-actions">
-            {mode === 'demo' && <button className="button" onClick={() => { setDemo(p => [...p, { ...nextDemoReading(p.at(-1)!), temperature: settings.temperatureMax + 2 }]); notify(t.toast.simulated); }}>{t.alerts.simulate}</button>}
+            {mode === 'demo' && <button className="button" onClick={() => { setDemo(p => [...p, { ...p.at(-1)!, id: `demo-sim-${Date.now()}`, timestamp: Date.now(), temperature: settings.temperatureMax + 2 }]); notify(t.toast.simulated); }}>{t.alerts.simulate}</button>}
             <button className="button" disabled={!unread} onClick={() => { setLastReadAlert(Date.now()); notify(t.toast.marked); }}><Check size={16}/>{t.alerts.markRead}</button>
           </div>
         </header>
@@ -455,7 +456,7 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
       <fieldset disabled={viewer}><legend>{t.set.device}</legend><div className="form-grid">
         <label>{t.set.deviceName}<input required maxLength={48} value={draft.deviceName} onChange={e => setDraft({ ...draft, deviceName: e.target.value })}/></label>
         <label>{t.set.room}<input required maxLength={32} value={draft.room} onChange={e => setDraft({ ...draft, room: e.target.value })}/></label>
-        <label>{t.set.refresh}<SelectField label={t.set.refresh} value={String(draft.interval)} onChange={v => setDraft({ ...draft, interval: +v })} options={[2, 5, 10, 30].map(v => [String(v), t.set.every(v)] as const)}/></label>
+        <div className="fixed-setting"><span>{t.set.schedule}</span><b>{t.status.fixedEvery}</b><small className="muted">{t.set.scheduleNote}</small></div>
       </div></fieldset>
       <fieldset disabled={viewer}><legend>{t.set.limits}</legend><p className="hint">{t.set.limitsHint}</p><div className="form-grid">
         {metrics.map(m => { const [min, max, step] = limitRange[m]; return <label key={m}>{t.set.max(t.metric[m].short, metricInfo[m].unit)}

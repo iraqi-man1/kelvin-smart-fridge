@@ -2,9 +2,16 @@ import type { Currency, Lang, Metric, Reading, Settings } from './types';
 
 export const metrics: Metric[] = ['temperature', 'humidity', 'eco2', 'tvoc'];
 
+/** Fixed: the server keeps one reading every 1 h 30 min (server/schedule.mjs). Nobody can change it. */
+export const READING_EVERY = 90 * 60000;
+/** How often the ESP32 checks in with the online server for commands (not saved as readings). */
+export const CHECK_IN_SECONDS = 30;
+/** The dashboard asks the server for new readings this often. */
+export const POLL_MS = 30000;
+
 export const defaults: Settings = {
   deviceName: 'ESP32-WROOM-32', room: 'Smart Fridge V3',
-  temperatureMax: 35, humidityMax: 80, eco2Max: 1000, tvocMax: 500, interval: 5,
+  temperatureMax: 35, humidityMax: 80, eco2Max: 1000, tvocMax: 500,
   supplyVoltage: 5, tariff: 0.27, currency: 'MYR', privacyBlur: true,
   parts: ['esp32', 'wifi', 'board', 'dht11', 'ccs811', 'oled', 'led', 'buzzer'],
 };
@@ -29,31 +36,36 @@ function demoValues(i: number, doorOpen: boolean) {
   };
 }
 
+/** Demo: a week of readings, one every 1 h 30 min like the real device. */
 export function createDemoHistory(): Reading[] {
-  const now = Date.now();
-  return Array.from({ length: 289 }, (_, i) => ({
-    id: `demo-${i}`, timestamp: now - (288 - i) * 5 * 60 * 1000,
-    // A 35-minute stretch with the door left open, so the alert parts draw too.
-    ...demoValues(i, i >= 200 && i < 207),
-    deviceId: 'ESP32-DEMO', rssi: -54, uptime: 86400 + i * 300,
+  const last = Math.floor(Date.now() / READING_EVERY) * READING_EVERY;
+  const count = 7 * 16;
+  return Array.from({ length: count + 1 }, (_, i) => ({
+    id: `demo-${i}`, timestamp: last - (count - i) * READING_EVERY,
+    // One reading with the door left open, so the alert parts draw too.
+    ...demoValues(i, i === count - 20),
+    deviceId: 'ESP32-DEMO', rssi: -54, uptime: 86400 + i * 5400,
   }));
 }
 
-/** Demo readings for any earlier period (for comparison): one every 5 minutes, a little different from today. */
+/** Demo readings for any earlier period (for comparison): one every 1 h 30 min, a little different from today. */
 export function demoRange(from: number, to: number): Reading[] {
   const out: Reading[] = [];
-  for (let t = Math.ceil(from / 300000) * 300000; t <= to; t += 300000) {
-    const v = demoValues(t / 300000 + 11, false);
+  for (let t = Math.ceil(from / READING_EVERY) * READING_EVERY; t <= to; t += READING_EVERY) {
+    const v = demoValues(t / READING_EVERY + 11, false);
     out.push({ id: `demo-cmp-${t}`, timestamp: t, ...v, temperature: v.temperature - 1, deviceId: 'ESP32-DEMO' });
   }
   return out;
 }
 
-export function nextDemoReading(previous: Reading): Reading {
+/** The demo's next reading once a new 1 h 30 min slot starts, else null. */
+export function nextDemoReading(previous: Reading): Reading | null {
+  const slot = Math.floor(Date.now() / READING_EVERY) * READING_EVERY;
+  if (slot <= previous.timestamp) return null;
   return {
-    ...previous, id: `demo-${Date.now()}`, timestamp: Date.now(),
-    ...demoValues(Date.now() / 300000, false),
-    uptime: (previous.uptime ?? 0) + 5,
+    ...previous, id: `demo-${slot}`, timestamp: slot,
+    ...demoValues(slot / READING_EVERY, false),
+    uptime: (previous.uptime ?? 0) + Math.round((slot - previous.timestamp) / 1000),
   };
 }
 
@@ -83,8 +95,9 @@ export function sanitizeSettings(saved: unknown): Settings {
     const inRange = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
     if (!s.deviceName || !s.room || !s.currency || !Array.isArray(s.parts) ||
       !inRange(s.temperatureMax, -40, 125) || !inRange(s.humidityMax, 1, 100) || !inRange(s.eco2Max, 400, 65535) ||
-      !inRange(s.tvocMax, 1, 65535) || ![2, 5, 10, 30].includes(s.interval) ||
+      !inRange(s.tvocMax, 1, 65535) ||
       !inRange(s.supplyVoltage, 3, 24) || !inRange(s.tariff, 0, 100)) return defaults;
+    delete (s as { interval?: number }).interval; // was the dashboard refresh; now fixed
     return s;
   } catch { return defaults; }
 }

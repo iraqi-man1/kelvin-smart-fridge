@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { BellRing, Lightbulb, MessageSquareText, RotateCcw, ShieldAlert, ShieldCheck, Timer, X } from 'lucide-react';
+import { BellRing, Lightbulb, MessageSquareText, RotateCcw, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { api, canControl, type Command, type DeviceStatus, type User } from './accountApi';
 import { timeFormat } from './data';
 import { useT } from './i18n';
-import { SelectField } from './ui';
 
 const describe = (c: Command, t: ReturnType<typeof useT>['t']) => {
   const ctl = t.ctl;
@@ -20,7 +19,6 @@ export function DeviceControl({ user, mode, notify }: { user: User; mode: 'demo'
   const c = t.ctl;
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [message, setMessage] = useState('');
-  const [interval, setIntervalValue] = useState('5');
   const [error, setError] = useState('');
   const [now, setNow] = useState(Date.now());
   const allowed = canControl(user);
@@ -66,13 +64,6 @@ export function DeviceControl({ user, mode, notify }: { user: User; mode: 'demo'
         </div>
         <small className={asciiOnly ? 'field-note' : 'field-note bad'}>{c.messageHint}</small>
       </form>
-      <div className="control-card">
-        <h3><Timer size={16}/>{c.interval}</h3>
-        <div className="control-row">
-          <SelectField label={c.interval} value={interval} onChange={setIntervalValue} options={[2, 5, 10, 30, 60].map(s => [String(s), c.every(s)] as const)}/>
-          <button type="button" className="button" disabled={!allowed} onClick={() => send('interval', Number(interval))}>{c.apply}</button>
-        </div>
-      </div>
       <div className="control-card">
         <h3><RotateCcw size={16}/>{c.reboot}</h3>
         <div className="control-row"><button type="button" className="button danger" disabled={!allowed} onClick={() => { if (window.confirm(c.confirmReboot)) send('reboot'); }}><RotateCcw size={15}/>{c.reboot}</button></div>

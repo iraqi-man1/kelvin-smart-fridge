@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { forecast, forecastAt, smoothPath, type Forecast } from './forecast';
-import { exceeds, fmt, limitFor, metricInfo, metrics, shortTime, timeFormat } from './data';
+import { exceeds, fmt, limitFor, metricInfo, metrics, READING_EVERY, shortTime, timeFormat } from './data';
+
+// One reading every 1 h 30 min: the line is broken only where a reading is missing.
+const LINE_GAP = READING_EVERY + 15 * 60000;
 import { useT } from './i18n';
 import type { Metric, Reading, Settings } from './types';
 
@@ -25,11 +28,21 @@ function domainFor(values: number[]) {
 
 export function timeTicks(start: number, end: number) {
   const span = end - start;
-  const step = span <= 3600000 ? 600000 : span <= 6 * 3600000 ? 3600000 : 4 * 3600000;
+  const step = span <= 3600000 ? 600000 : span <= 6 * 3600000 ? 3600000 : span <= 32 * 3600000 ? 4 * 3600000 : span <= 4 * 86400000 ? 12 * 3600000 : 86400000;
   const offset = new Date(start).getTimezoneOffset() * 60000;
   const ticks: number[] = [];
   for (let t = Math.ceil((start - offset) / step) * step + offset; t <= end; t += step) ticks.push(t);
   return ticks;
+}
+
+/** The time at the cursor; with the date on charts longer than a day. */
+const whenLabel = (tm: number, span: number) => span <= 32 * 3600000 ? timeFormat(tm) : `${new Date(tm).getDate()}/${new Date(tm).getMonth() + 1} ${shortTime(tm)}`;
+
+/** A time under the chart: the hour on a day's chart, the date (and hour) on longer ones. */
+export function tickLabel(tk: number, span: number) {
+  if (span <= 32 * 3600000) return shortTime(tk);
+  const d = new Date(tk), day = `${d.getDate()}/${d.getMonth() + 1}`;
+  return span <= 4 * 86400000 && d.getHours() ? `${day} ${shortTime(tk)}` : day;
 }
 
 /** An earlier period drawn over this one: its readings and how far back it is (ms). */
@@ -63,9 +76,9 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
   // The earlier period, moved forward onto this period's time axis.
   const before = useMemo(() => compare ? compare.data.map(r => ({ ...r, timestamp: r.timestamp + compare.offset })).filter(r => r.timestamp >= start && r.timestamp <= end) : [], [compare, start, end]);
   const beforeGap = useMemo(() => {
-    if (before.length < 2) return 600000;
+    if (before.length < 2) return LINE_GAP;
     const steps = before.slice(1).map((r, i) => r.timestamp - before[i].timestamp).sort((a, b) => a - b);
-    return Math.max(600000, steps[Math.floor(steps.length / 2)] * 3);
+    return Math.max(LINE_GAP, steps[Math.floor(steps.length / 2)] * 3);
   }, [before]);
   const beforeAt = (tm: number) => {
     let best: Reading | null = null;
@@ -91,7 +104,7 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
   return <div className="strip-chart" ref={ref} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
     <div className="strip-cursor" dir={t.dir}>
       <span>{future ? t.chart.forecastAt : hover ? t.chart.atCursor : t.chart.latest}</span>
-      <b className="mono">{hover ? timeFormat(hover.t) : shown ? timeFormat(shown.timestamp) : '—'}</b>
+      <b className="mono" dir="ltr">{hover ? whenLabel(hover.t, end - start) : shown ? whenLabel(shown.timestamp, end - start) : '—'}</b>
     </div>
     {metrics.map(metric => {
       const info = metricInfo[metric];
@@ -101,7 +114,7 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
       const limit = limitFor(metric, settings);
       const limitVisible = data.length > 0 && limit >= domain.min && limit <= domain.max;
       // Break the line where the device was silent, rather than drawing through the gap.
-      const path = data.map((r, i) => `${i && r.timestamp - data[i - 1].timestamp < 600000 ? 'L' : 'M'}${x(r.timestamp).toFixed(1)},${y(r[metric]).toFixed(1)}`).join('');
+      const path = data.map((r, i) => `${i && r.timestamp - data[i - 1].timestamp < LINE_GAP ? 'L' : 'M'}${x(r.timestamp).toFixed(1)},${y(r[metric]).toFixed(1)}`).join('');
       const ahead = future && fc && hover ? forecastAt(fc, Math.min(hover.t, fc.points.at(-1)!.t)) : null;
       const value = future ? ahead?.v : shown?.[metric];
       const last = fc?.points.at(-1);
@@ -151,7 +164,11 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
           {thenAtCursor && <circle cx={x(thenAtCursor.timestamp)} cy={y(thenAtCursor[metric])} r="3.5" fill="var(--surface)" stroke={info.color} strokeWidth="1.5"/>}
           {data.length === 1
             ? <circle cx={x(data[0].timestamp)} cy={y(data[0][metric])} r="4" fill={info.color}/>
-            : <path d={path} fill="none" stroke={info.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>}
+            : <>
+              <path d={path} fill="none" stroke={info.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+              {/* Each saved reading (one every 1 h 30 min) as a small dot on the line. */}
+              {data.length <= 200 && data.map(r => <circle key={r.id} cx={x(r.timestamp)} cy={y(r[metric])} r="2" fill={info.color}/>)}
+            </>}
           {hover && <line className="cursor-line" x1={x(hover.t)} x2={x(hover.t)} y1={0} y2={rowH}/>}
           {hover?.r && <circle cx={x(hover.t)} cy={y(hover.r[metric])} r="4.5" fill={info.color} stroke="var(--surface)" strokeWidth="2"/>}
           {ahead && <>
@@ -164,7 +181,7 @@ export function StripChart({ data, start, end, settings, horizon = 0, compare = 
     <svg className="strip-axis" width={width} height={22} aria-hidden="true">
       {timeTicks(start, axisEnd).map(tk => <g key={tk}>
         <line x1={x(tk)} x2={x(tk)} y1={0} y2={5}/>
-        <text x={x(tk)} y={17} textAnchor="middle">{shortTime(tk)}</text>
+        <text x={x(tk)} y={17} textAnchor="middle" direction="ltr">{tickLabel(tk, axisEnd - start)}</text>
       </g>)}
     </svg>
     {(showFuture || compare) && <div className="chart-legends" dir={t.dir}>

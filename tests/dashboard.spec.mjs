@@ -64,11 +64,12 @@ test('real device data is validated, converted, and kept separate from demo data
   const invalid = await request.post('/api/readings', { data: { temperature: 25, humidity: 101, eco2: 600, tvoc: 30 } });
   expect(invalid.status()).toBe(400);
   const before = (await (await request.get('/api/readings')).json()).readings.length;
-  const posted = await Promise.all(Array.from({ length: 3 }, (_, i) => request.post('/api/readings', { data: { temperature: 23 + i, humidity: 42 + i, eco2: 650 + i * 10, tvoc: 40 + i, rssi: -60, deviceId: 'ESP32-WROOM-32' } })));
-  for (const response of posted) expect(response.status()).toBe(201);
+  // Fixed schedule: one reading per 90-minute slot is kept (201); later check-ins get 200.
+  const posted = [];
+  for (let i = 0; i < 3; i++) posted.push(await request.post('/api/readings', { data: { temperature: 23 + i, humidity: 42 + i, eco2: 650 + i * 10, tvoc: 40 + i, rssi: -60, deviceId: 'ESP32-WROOM-32' } }));
+  for (const response of posted.slice(1)) expect(response.status()).toBe(200);
   const after = (await (await request.get('/api/readings')).json()).readings;
-  expect(after.length).toBe(before + 3);
-  expect(after.at(-1).eco2).toBeGreaterThanOrEqual(650);
+  expect(after.length).toBe(before + (posted[0].status() === 201 ? 1 : 0));
   await page.goto('/');
   await page.getByRole('button', { name: 'وضع تجريبي', exact: true }).click();
   await page.getByRole('dialog').getByRole('radio', { name: 'جهاز ESP32' }).click();

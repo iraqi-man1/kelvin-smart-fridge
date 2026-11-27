@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { niceStep } from './Charts';
-import { currencies, formatEnergy, formatMoney, formatUptime, shortTime } from './data';
+import { CHECK_IN_SECONDS, currencies, formatEnergy, formatMoney, formatUptime, shortTime } from './data';
 import { useT } from './i18n';
-import { currentNow, hourlyWh, parts, sendInterval, totalWh, usageBetween } from './power';
+import { currentNow, hourlyWh, parts, totalWh, usageBetween } from './power';
 import type { Reading, Settings } from './types';
 
 function useWidth() {
@@ -64,7 +64,7 @@ export function useEnergy(readings: Reading[], settings: Settings, now: number) 
     const today = usageBetween(readings, midnight.getTime(), now, settings);
     const day = usageBetween(readings, now - 86400000, now, settings);
     const todayWh = totalWh(today, V), dayWh = totalWh(day, V);
-    const interval = sendInterval(readings) ?? settings.interval;
+    const interval = CHECK_IN_SECONDS;
     const latest = readings.at(-1);
     const live = currentNow(latest, interval, settings);
     const mA = live.reduce((s, p) => s + p.mA, 0);

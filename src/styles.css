@@ -301,6 +301,8 @@ select, .form-grid input { height: 36px; padding: 0 10px; border: 1px solid var(
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .form-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
 .form-grid input, .form-grid select { width: 100%; height: 38px; font-size: 14px; color: var(--ink); }
+.fixed-setting { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+.fixed-setting b { font-size: 14px; color: var(--ink); }
 .form-grid input:focus, .form-grid select:focus { outline: 0; border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .hint { font-size: 12.5px; color: var(--ink-3); margin-bottom: 12px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
