@@ -19,7 +19,7 @@ An ESP32 reads the temperature, humidity and air quality inside a fridge. Kelvin
 ![Tests](https://img.shields.io/badge/tests-72_passing-brightgreen)
 ![Languages](https://img.shields.io/badge/UI-English_·_العربية_·_Melayu-blueviolet)
 
-<img src="docs/gifs/dashboard.gif" alt="The Kelvin dashboard showing four live sensor cards" width="100%">
+<img src="docs/gifs/teaser.gif" alt="A 25-second tour of Kelvin: sign-up, live dashboard, charts, energy, readings log, Telegram alert, dark mode, phone" width="100%">
 
 </div>
 
@@ -27,7 +27,6 @@ An ESP32 reads the temperature, humidity and air quality inside a fridge. Kelvin
 
 ## Contents
 
-- [Watch the film](#-watch-the-film)
 - [The app in motion](#-the-app-in-motion)
 - [Features](#-features)
 - [How it works](#-how-it-works)
@@ -39,25 +38,9 @@ An ESP32 reads the temperature, humidity and air quality inside a fridge. Kelvin
 
 ---
 
-## 🎬 Watch the film
-
-<div align="center">
-
-[![Watch the Kelvin keynote film (3:55)](docs/video/keynote-poster.jpg)](docs/video/kelvin-keynote.mp4)
-
-**Kelvin, the keynote (3:55).** A calm walkthrough of the real app, cut to an original score. A 4K master is also available.
-
-| [🎞️ Promo (1:20)](docs/video/kelvin-promo.mp4) | [🎬 Full demo (2:09)](docs/video/kelvin-demo.mp4) |
-|:---:|:---:|
-| [<img src="docs/video/promo-poster.jpg" width="380">](docs/video/kelvin-promo.mp4) | [<img src="docs/video/poster.jpg" width="380">](docs/video/kelvin-demo.mp4) |
-
-</div>
-
-Every screen in the films and GIFs is the real app running on sample data. The films are built in code with [Remotion](https://www.remotion.dev) and FFmpeg; the source is in [`promo-video/`](promo-video/).
-
----
-
 ## ✨ The app in motion
+
+Every screen here is the real app running on sample data.
 
 <table>
 <tr>
@@ -179,8 +162,8 @@ The full guide covers Supabase, Gmail, Telegram, ntfy, Vercel, roles and flashin
 ├── api/            Vercel function entry point
 ├── supabase/       Database schema
 ├── tests/          Unit tests (node --test) and end-to-end tests (Playwright)
-├── promo-video/    The films, made in code with Remotion and FFmpeg
-└── docs/           Setup guide, screenshots, GIFs and videos
+├── promo-video/    The promo films, made in code with Remotion and FFmpeg
+└── docs/           Setup guide, screenshots and GIFs
 ```
 
 ---
