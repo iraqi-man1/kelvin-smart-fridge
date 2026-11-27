@@ -28,3 +28,5 @@ artifacts/
 # Rendered promo videos (big files; the GitHub copy is in docs/video)
 /promo-video/out/
 /promo-video/public/score.wav
+/promo-video/public/rec/
+/promo-video/public/launch.wav

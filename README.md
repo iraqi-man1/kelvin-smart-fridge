@@ -10,6 +10,12 @@
 
 🔗 **الموقع:** https://kelvin-smart-fridge.vercel.app (النسخة القديمة على Netlify: https://kelvin-smart-fridge.netlify.app)
 
+## 🚀 جولة الإطلاق (2:49)
+
+[![شاهد جولة إطلاق Kelvin](docs/video/launch-poster.jpg)](docs/video/kelvin-launch.mp4)
+
+جولة بأسلوب إطلاق المنتجات داخل التطبيق الحقيقي: التسجيل بكود البريد، اللوحة، الطاقة، تنزيل Excel وشنو بداخله، التنبيهات ومحرر الرسالة، الأوسمة والتحقق بخطوتين وقفل الشاشة، المستخدمين وسجل الأمان، اللغات والهاتف، وليش اخترنا كل تقنية. القطع والحركة على إيقاع الموسيقى (120 BPM). مصدره بـ [promo-video/](promo-video/) — Remotion + FFmpeg.
+
 ## 🎞️ الإعلان (1:20)
 
 [![شاهد إعلان Kelvin](docs/video/promo-poster.jpg)](docs/video/kelvin-promo.mp4)

@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "promo-video/src/launch/Launch.jsx"
+        ],
+        "createdAt": "2026-11-27T18:12:46.223Z",
+        "reason": "Claude decided: these are lower-third captions in a rendered video (broadcast convention), not web UI cards; the film is already rendering with them"
+      }
+    ]
+  }
+}

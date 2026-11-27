@@ -5,7 +5,9 @@
   "description": "The Kelvin cinematic promo, built with Remotion. Real app captures + motion design + an original score.",
   "scripts": {
     "studio": "remotion studio src/index.jsx",
-    "render": "remotion render src/index.jsx KelvinPromo out/kelvin-promo-1080p.mp4 --codec h264 --crf 16 --audio-codec aac --audio-bitrate 192k --gl=swangle"
+    "render": "remotion render src/index.jsx KelvinPromo out/kelvin-promo-1080p.mp4 --codec h264 --crf 16 --audio-codec aac --audio-bitrate 192k --gl=swangle",
+    "launch:score": "node scripts/make-launch-score.cjs",
+    "launch:render": "remotion render src/index.jsx KelvinLaunch out/kelvin-launch-1080p.mp4 --codec h264 --crf 17 --audio-codec aac --audio-bitrate 192k --gl=swangle"
   },
   "dependencies": {
     "@remotion/cli": "4.0.547",
