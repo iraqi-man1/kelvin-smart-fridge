@@ -10,6 +10,12 @@
 
 🔗 **الموقع:** https://kelvin-smart-fridge.vercel.app (النسخة القديمة على Netlify: https://kelvin-smart-fridge.netlify.app)
 
+## 🎞️ الإعلان (1:20)
+
+[![شاهد إعلان Kelvin](docs/video/promo-poster.jpg)](docs/video/kelvin-promo.mp4)
+
+إعلان سينمائي قصير: المشكلة، التقنية، التطبيق الحقيقي بمنظور ثلاثي الأبعاد، التنبيه على تلكرام، والختام. كل شاشات التطبيق لقطات حقيقية (بيانات تجريبية)، والموسيقى أصلية. مصدره بـ [promo-video/](promo-video/) (Remotion + FFmpeg).
+
 ## 🎬 فيديو العرض (2:09)
 
 [![شاهد فيديو عرض Kelvin](docs/video/poster.jpg)](docs/video/kelvin-demo.mp4)
