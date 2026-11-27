@@ -149,4 +149,8 @@ export const isAlert = (r: Reading, s: Settings) => metrics.some(m => exceeds(m,
 export const formatEnergy = (wh?: number) => wh === undefined ? { value: '—', unit: 'Wh' }
   : wh >= 1000 ? { value: (wh / 1000).toFixed(2), unit: 'kWh' } : { value: wh.toFixed(wh < 10 ? 2 : 1), unit: 'Wh' };
 
+/** Charge drawn from the supply: mAh, or Ah from 1,000 mAh. */
+export const formatCharge = (mAh?: number) => mAh === undefined ? { value: '—', unit: 'mAh' }
+  : mAh >= 1000 ? { value: (mAh / 1000).toFixed(mAh >= 10000 ? 1 : 2), unit: 'Ah' } : { value: mAh.toFixed(mAh < 10 ? 2 : 0), unit: 'mAh' };
+
 export const formatMoney = (amount?: number) => amount === undefined ? '—' : amount.toFixed(amount < 0.01 ? 4 : amount < 0.1 ? 3 : 2);

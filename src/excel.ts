@@ -144,16 +144,19 @@ export async function downloadExcel({ readings, settings, t, source, app, studen
   en.getCell(`B${monthRow}`).value = { formula: `IF(B${vRow + 2}=0,0,E${totalRow}/B${vRow + 2}*24*30/1000)`, result: usage.hours ? totalWhValue / usage.hours * 24 * 30 / 1000 : 0 };
   const monthCostRow = infoRow(`${t.xl.monthCost} (${settings.currency})`, 0, '0.00');
   en.getCell(`B${monthCostRow}`).value = { formula: `B${monthRow}*B${priceRow}`, result: (usage.hours ? totalWhValue / usage.hours * 24 * 30 / 1000 : 0) * settings.tariff };
-  for (const r of [kwhRow, costRow, monthRow, monthCostRow]) en.getRow(r).getCell(2).font = { bold: true, color: { argb: 'FF1F3B63' } };
+  // Charge per day in mAh (what a battery or power bank is rated in): the parts' mAh over the hours on, times 24.
+  const dayMAhRow = infoRow(t.xl.perDayMAh, 0, '0');
+  en.getCell(`B${dayMAhRow}`).value = { formula: `IF(B${vRow + 2}=0,0,D${totalRow}/B${vRow + 2}*24)`, result: usage.hours ? totalShare / usage.hours * 24 : 0 };
+  for (const r of [kwhRow, costRow, monthRow, monthCostRow, dayMAhRow]) en.getRow(r).getCell(2).font = { bold: true, color: { argb: 'FF1F3B63' } };
 
   // Energy per clock hour, for the last 24 hours of the export.
   en.addRow([]);
   const hours = sorted.length ? hourlyWh(sorted, to, settings, 24) : [];
-  const hh = en.addRow([t.xl.hour, t.xl.energy, t.xl.minutesOn]);
+  const hh = en.addRow([t.xl.hour, t.xl.energy, t.xl.minutesOn, t.xl.charge]);
   hh.eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = HEAD_FILL; c.alignment = { horizontal: 'center' }; });
   for (const h of hours) {
-    const row = en.addRow([local(h.start), +h.wh.toFixed(4), Math.round(h.hours * 60)]);
-    row.getCell(1).numFmt = 'yyyy-mm-dd h:mm AM/PM'; row.getCell(2).numFmt = '0.000';
+    const row = en.addRow([local(h.start), +h.wh.toFixed(4), Math.round(h.hours * 60), +(h.wh * 1000 / V).toFixed(2)]);
+    row.getCell(1).numFmt = 'yyyy-mm-dd h:mm AM/PM'; row.getCell(2).numFmt = '0.000'; row.getCell(4).numFmt = '0.0';
     row.eachCell(c => { c.border = { bottom: THIN }; });
   }
 

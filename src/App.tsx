@@ -321,10 +321,10 @@ function App({ user, onUser, onSignedOut, lang, setLang, onLock, lockPrefs, setL
       <button className="text-button" onClick={() => navigate('energy')}>{t.summary.details}<Forward size={15}/></button>
     </header>
     <dl className="energy-figures">
-      <div><dt>{t.e.powerNow}</dt><dd><b className="mono">{energy.watts.toFixed(2)}</b> W</dd></div>
+      <div><dt>{t.e.powerNow}</dt><dd><b className="mono">{energy.watts.toFixed(2)}</b> W <span className="muted">· <b className="mono">{energy.mA.toFixed(0)}</b> mA</span></dd></div>
       <div><dt>{t.e.today}</dt><dd><b className="mono">{todayEnergy.value}</b> {todayEnergy.unit}</dd></div>
       <div><dt>{t.e.cost}</dt><dd><b className="mono">{formatMoney(energy.todayCost)}</b> {currencies[settings.currency].symbol(lang)}</dd></div>
-      <div><dt>{t.e.month}</dt><dd><b className="mono">{energy.monthKwh.toFixed(2)}</b> kWh</dd></div>
+      <div><dt>{t.e.monthLong}</dt><dd><b className="mono">{energy.monthKwh.toFixed(2)}</b> kWh</dd></div>
     </dl>
   </section>;
 

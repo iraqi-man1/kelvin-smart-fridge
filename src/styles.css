@@ -405,6 +405,8 @@ select, .form-grid input { height: 36px; padding: 0 10px; border: 1px solid var(
 
 /* Energy */
 .readouts.energy-readouts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.energy-units { display: flex; justify-content: flex-end; margin-top: 16px; }
+.energy-units + .readouts { margin-top: 10px; }
 .power-swatch { background: var(--power); }
 .metric-card .text-button { padding: 0; font-size: 12.5px; }
 
