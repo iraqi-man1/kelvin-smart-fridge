@@ -27,3 +27,12 @@ Composition `KelvinLaunch`: the cinematic intro, then a product-launch walkthrou
 npm run launch:score    # → public/launch.wav
 npm run launch:render   # → out/kelvin-launch-1080p.mp4
 ```
+
+## The keynote film (3:55) — the main one
+
+Composition `KelvinKeynote`: calm, light, Apple-style. Footage near natural speed on a 90 BPM grid; each highlight is a short moment of the recording (the camera eases in, the rest softly blurs, a note appears, then it all eases back before the page changes).
+
+```
+npm run keynote:score    # → public/keynote.wav
+npm run keynote:render   # → out/kelvin-keynote-1080p.mp4
+```
