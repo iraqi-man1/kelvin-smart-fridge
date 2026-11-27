@@ -10,6 +10,12 @@
 
 🔗 **الموقع:** https://kelvin-smart-fridge.vercel.app (النسخة القديمة على Netlify: https://kelvin-smart-fridge.netlify.app)
 
+## 🎬 فيديو العرض (2:09)
+
+[![شاهد فيديو عرض Kelvin](docs/video/poster.jpg)](docs/video/kelvin-demo.mp4)
+
+جولة كاملة بالتطبيق: تسجيل الدخول، اللوحة المباشرة، الرسوم والتوقع، الطاقة بالـ Wh والـ mAh، سجل القراءات و Excel، التنبيهات، طريقة عمل النظام، ربط الجهاز، المستخدمين وسجل الأمان، الوضع الداكن والثلاث لغات، والهاتف. (القراءات بالفيديو بيانات تجريبية.)
+
 <img src="docs/screenshots/overview.png" alt="لوحة المراقبة" width="100%">
 
 ## المزايا

@@ -21,3 +21,6 @@ artifacts/
 
 .vercel
 .env*
+
+# The full-quality demo video stays on this computer (docs/video has the GitHub copy)
+/video/
