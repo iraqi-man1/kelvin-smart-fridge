@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { setTimeLang } from './data';
 import type { Lang, Metric, Page } from './types';
 
 type Step = { h: string; p: string };
@@ -1211,6 +1212,7 @@ const storedLang = (): Lang => {
 
 export function useLangState() {
   const [lang, setLang] = useState<Lang>(storedLang);
+  setTimeLang(lang); // before this render, so every time shown uses the right AM/PM mark
   useEffect(() => {
     const root = document.documentElement;
     root.lang = lang; root.dir = dictionaries[lang].dir;

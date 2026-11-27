@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, ChevronUp, KeyRound, Lock, LogOut, RectangleElli
 import { Avatar } from './Account';
 import { api, type User } from './accountApi';
 import { dictionaries, langs, useT } from './i18n';
+import { shortTime } from './data';
 import type { Lang } from './types';
 
 export type LockPrefs = { hidden: 'never' | 'now' | '10' | '60'; idle: 0 | 1 | 5 | 15 | 30 };
@@ -134,7 +135,7 @@ export function LockScreen({ user, onUnlocked, onSignOut, setLang }: Props) {
   }
 
   const locale = lang === 'ar' ? 'ar' : lang === 'ms' ? 'ms-MY' : 'en-GB';
-  const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+  const time = shortTime(now.getTime());
   const date = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', numberingSystem: 'latn' }).format(now);
   const label = method === 'code' ? l.pin : t.auth.password;
 

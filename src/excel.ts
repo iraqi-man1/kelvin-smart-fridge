@@ -32,7 +32,7 @@ export async function downloadExcel({ readings, settings, t, source, app, studen
   const sheet = book.addWorksheet(t.xl.sheet, { views: [{ state: 'frozen', ySplit: 1, rightToLeft: rtl }] });
   sheet.columns = [
     { header: t.xl.date, key: 'date', width: 13, style: { numFmt: 'yyyy-mm-dd' } },
-    { header: t.xl.time, key: 'time', width: 11, style: { numFmt: 'hh:mm:ss' } },
+    { header: t.xl.time, key: 'time', width: 14, style: { numFmt: 'h:mm:ss AM/PM' } },
     ...metrics.map(m => ({ header: unitLabel(m), key: m, width: 18, style: { numFmt: metricInfo[m].digits ? '0.0' : '0' } })),
     { header: t.xl.status, key: 'status', width: 34 },
     { header: t.xl.device, key: 'device', width: 18 },
@@ -79,7 +79,7 @@ export async function downloadExcel({ readings, settings, t, source, app, studen
   for (const [k, v] of info) {
     const row = sum.addRow([k, v]);
     row.getCell(1).font = { bold: true, color: { argb: 'FF454D5A' } };
-    if (v instanceof Date) row.getCell(2).numFmt = 'yyyy-mm-dd hh:mm';
+    if (v instanceof Date) row.getCell(2).numFmt = 'yyyy-mm-dd h:mm AM/PM';
     row.getCell(2).alignment = { horizontal: rtl ? 'right' : 'left' };
   }
   sum.addRow([]);
@@ -153,7 +153,7 @@ export async function downloadExcel({ readings, settings, t, source, app, studen
   hh.eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = HEAD_FILL; c.alignment = { horizontal: 'center' }; });
   for (const h of hours) {
     const row = en.addRow([local(h.start), +h.wh.toFixed(4), Math.round(h.hours * 60)]);
-    row.getCell(1).numFmt = 'yyyy-mm-dd hh:mm'; row.getCell(2).numFmt = '0.000';
+    row.getCell(1).numFmt = 'yyyy-mm-dd h:mm AM/PM'; row.getCell(2).numFmt = '0.000';
     row.eachCell(c => { c.border = { bottom: THIN }; });
   }
 

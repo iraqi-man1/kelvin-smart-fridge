@@ -104,13 +104,22 @@ export function sanitizeSettings(saved: unknown): Settings {
 }
 
 
-export const timeFormat = (timestamp: number) => new Intl.DateTimeFormat('en-GB', {
-  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-}).format(timestamp);
+// Times are shown on a 12-hour clock, with the morning/evening mark in the page's language.
+const PERIOD: Record<Lang, { am: string; pm: string }> = { ar: { am: 'ص', pm: 'م' }, en: { am: 'AM', pm: 'PM' }, ms: { am: 'PG', pm: 'PTG' } };
+let timeLang: Lang = 'ar';
+/** Called by the language switch, so every time on the page uses its AM/PM mark. */
+export const setTimeLang = (lang: Lang) => { timeLang = lang; };
+const clock = (timestamp: number, seconds: boolean) => {
+  const parts = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}), hour12: true }).formatToParts(timestamp);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
+  const mark = PERIOD[timeLang][get('dayPeriod').toUpperCase() === 'AM' ? 'am' : 'pm'];
+  return `${get('hour')}:${get('minute')}${seconds ? `:${get('second')}` : ''} ${mark}`;
+};
 
-export const shortTime = (timestamp: number) => new Intl.DateTimeFormat('en-GB', {
-  hour: '2-digit', minute: '2-digit', hour12: false,
-}).format(timestamp);
+/** 1:30:05 PM (or ص / م, PG / PTG). */
+export const timeFormat = (timestamp: number) => clock(timestamp, true);
+/** 1:30 PM */
+export const shortTime = (timestamp: number) => clock(timestamp, false);
 
 const locales: Record<Lang, string> = { ar: 'ar', en: 'en-GB', ms: 'ms-MY' };
 export const dateFormat = (timestamp: number, lang: Lang) => new Intl.DateTimeFormat(locales[lang], {
