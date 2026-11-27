@@ -4,7 +4,24 @@
 // moment, so it can never stay on screen after the page has moved on.
 export const FPS = 30, BEAT = 20, BAR = 80, INTRO = 330;
 
+// A 4K recording is made in slow motion (timeline.slowmo) at 3840 px wide: bring its clock back
+// to real time and its coordinates to the 1920 px frame of the film, so the edit stays the same.
+export function normTL(TL) {
+  if (TL.normalized) return TL;
+  const K = TL.slowmo || 1, desk = TL.segments.find(s => s.name === 'desktop'), q = 1920 / (desk?.w || 1920);
+  const t0 = Math.min(...TL.segments.map(s => s.start)), vt = t => t0 + (t - t0) / K;
+  const xy = v => (typeof v === 'number' ? v * q : v);
+  return {
+    ...TL, normalized: true,
+    segments: TL.segments.map(s => ({ ...s, start: vt(s.start), end: vt(s.end), frames: s.frames.map(f => ({ ...f, t: vt(f.t) })) })),
+    events: TL.events.map(e => ({ ...e, t: vt(e.t),
+      ...(e.seg !== 'phone' && e.x != null ? { x: xy(e.x), y: xy(e.y) } : {}),
+      ...(e.rects ? { rects: Object.fromEntries(Object.entries(e.rects).map(([k, r]) => [k, r && r.map(xy)])) } : {}) })),
+  };
+}
+
 export function buildEdit(TL) {
+  TL = normTL(TL);
   const desk = TL.segments.find(s => s.name === 'desktop'), phone = TL.segments.find(s => s.name === 'phone');
   const marks = Object.fromEntries(TL.events.filter(e => e.type === 'mark').map(e => [e.name, e]));
   const at = (name, off = 0) => (name === 'END' ? desk.end : marks[name].t) + off * 1000;

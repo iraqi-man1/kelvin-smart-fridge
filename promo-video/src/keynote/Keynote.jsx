@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { AbsoluteFill, Audio, Img, continueRender, delayRender, staticFile, useCurrentFrame } from 'remotion';
-import TL from '../../public/rec/timeline.json';
-import { BAR, FPS, TECH, buildEdit } from './edit.mjs';
+import RAW from '../../public/rec/timeline.json';
+import { BAR, FPS, TECH, buildEdit, normTL } from './edit.mjs';
 import { drawFrame, setup } from '../scene.js';
 
+const TL = normTL(RAW);
 export const EDIT = buildEdit(TL);
 const W = 1920, H = 1080;
 const SANS = '"Inter", "IBM Plex Sans", "Segoe UI", sans-serif';
@@ -168,8 +169,8 @@ function SceneShot({ shot, lf }) {
   const [handle] = useState(() => delayRender('scene assets'));
   const [ready, setReady] = useState(false);
   useLayoutEffect(() => { setup(staticFile).then(() => { setReady(true); continueRender(handle); }); }, [handle]);
-  useLayoutEffect(() => { if (!ready) return; const T = shot.from + (lf / shot.len) * (shot.to - shot.from); ref.current.getContext('2d').drawImage(drawFrame(Math.min(T, 79.99)), 0, 0); }, [lf, ready, shot]);
-  return <AbsoluteFill style={{ background: '#000' }}><canvas ref={ref} width={W} height={H} /></AbsoluteFill>;
+  useLayoutEffect(() => { if (!ready) return; const T = shot.from + (lf / shot.len) * (shot.to - shot.from); const src = drawFrame(Math.min(T, 79.99)); const cv = ref.current; cv.width = src.width; cv.height = src.height; cv.getContext('2d').drawImage(src, 0, 0); }, [lf, ready, shot]);
+  return <AbsoluteFill style={{ background: '#000' }}><canvas ref={ref} width={W} height={H} style={{ width: W, height: H }} /></AbsoluteFill>;
 }
 
 export const Keynote = () => {

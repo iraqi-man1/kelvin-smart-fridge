@@ -2,9 +2,10 @@
 // Kelvin — cinematic promo (80 s, 1920×1080, 30 fps). Every app screen shown is a real
 // capture of the running app (Playwright); the graphics around it are motion design.
 const W = 1920, H = 1080, FPS = 30, TOTAL = 80;
-const c = document.createElement('canvas'); c.width = 1920; c.height = 1080;
+// Pixel scale: 1 for 1080p, 2 for 4K (REMOTION_SCALE=2). The scenes are drawn in 1920×1080 units.
+let SC = 1; try { SC = Number(process.env.REMOTION_SCALE) || 1; } catch {}
+const c = document.createElement('canvas'); c.width = 1920 * SC; c.height = 1080 * SC;
 const g = c.getContext('2d');
-const SC = 1;
 const SANS = '"IBM Plex Sans", "Segoe UI", sans-serif', MONO = '"IBM Plex Mono", Consolas, monospace';
 const EMOJI = '"Segoe UI Emoji", "Apple Color Emoji", sans-serif';
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
@@ -21,13 +22,13 @@ function text(s, x, y, size, weight, color, { align = 'left', alpha = 1, font = 
   if (alpha <= 0.002) return;
   g.save(); g.globalAlpha *= alpha; g.font = `${weight} ${size}px ${font}`; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'alphabetic';
   g.letterSpacing = `${spacing}px`;
-  if (blur > 0.2) g.filter = `blur(${blur}px)`;
-  if (glow) { g.shadowColor = glow; g.shadowBlur = 28; }
+  if (blur > 0.2) g.filter = `blur(${blur * SC}px)`;
+  if (glow) { g.shadowColor = glow; g.shadowBlur = 28 * SC; }
   g.fillText(s, x, y); g.restore();
 }
 
 // ---------- WebGL planes (real screenshots in 3D perspective) ----------
-const glc = document.createElement('canvas'); glc.width = W; glc.height = H;
+const glc = document.createElement('canvas'); glc.width = W * SC; glc.height = H * SC;
 const gl = glc.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: true });
 const prog = (() => {
   const vs = `attribute vec2 p; uniform mat4 m; varying vec2 uv; void main(){ uv = vec2(p.x*0.5+0.5, 0.5-p.y*0.5); gl_Position = m*vec4(p,0.0,1.0); }`;
@@ -81,14 +82,14 @@ function plane(src, o) {
   const m = planeMatrix(o);
   const pts = [project(m, -1, -1), project(m, 1, -1), project(m, 1, 1), project(m, -1, 1)];
   g.save(); g.globalAlpha = a * (o.shadow ?? 0.85);
-  g.shadowColor = o.glow || 'rgba(56,189,248,.35)'; g.shadowBlur = 90; g.shadowOffsetY = 30;
+  g.shadowColor = o.glow || 'rgba(56,189,248,.35)'; g.shadowBlur = 90 * SC; g.shadowOffsetY = 30 * SC;
   g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fillStyle = 'rgba(8,12,22,1)'; g.fill(); g.restore();
-  gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.viewport(0, 0, W * SC, H * SC); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.bindTexture(gl.TEXTURE_2D, tex(src));
   gl.uniformMatrix4fv(U('m'), false, m); gl.uniform1f(U('a'), a); gl.uniform1f(U('bright'), o.bright ?? 1);
   gl.uniform2f(U('size'), o.w, o.h); gl.uniform1f(U('radius'), o.radius ?? 18);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  g.drawImage(glc, 0, 0);
+  g.drawImage(glc, 0, 0, W, H);
   // A thin light edge.
   g.save(); g.globalAlpha = a * 0.5; g.strokeStyle = 'rgba(148,197,255,.55)'; g.lineWidth = 1.2;
   g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.stroke(); g.restore();
@@ -188,7 +189,7 @@ function sceneHook(t) {
   if (t > 9.0) {
     const k = out((t - 9.0) / 0.9), s = lerp(1.25, 1, outQ((t - 9.0) / 1.6));
     glow(W / 2, 480, 520, 'rgba(37,99,235,.35)', k);
-    g.save(); g.globalAlpha = k; g.translate(W / 2, 400); g.scale(s, s); g.shadowColor = 'rgba(56,189,248,.7)'; g.shadowBlur = 50; g.drawImage(A.logo, -64, -64, 128, 128); g.restore();
+    g.save(); g.globalAlpha = k; g.translate(W / 2, 400); g.scale(s, s); g.shadowColor = 'rgba(56,189,248,.7)'; g.shadowBlur = 50 * SC; g.drawImage(A.logo, -64, -64, 128, 128); g.restore();
     text('Kelvin', W / 2, 610, 150, 700, '#fff', { align: 'center', alpha: k, spacing: lerp(40, -2, outQ((t - 9.0) / 1.8)) });
     text('SMART FRIDGE MONITOR', W / 2, 676, 24, 500, ACC2, { align: 'center', alpha: out((t - 9.7) / 0.8), spacing: 10, font: MONO });
   }
@@ -202,7 +203,7 @@ function sceneTech(t) {
   const fx = lerp(640, 470, ease((t - 6.2) / 1.4)), fy = 520, fa = out(t / 1.6), fs = lerp(0.9, 1, outQ(t / 2.5));
   glow(fx, fy - 40, 520, 'rgba(56,130,246,.32)', fa);
   g.save(); g.globalAlpha = fa; g.translate(fx, fy + Math.sin(t * 1.2) * 6); g.scale(fs, fs);
-  g.shadowColor = 'rgba(56,189,248,.45)'; g.shadowBlur = 60; g.drawImage(A.fridge, -330, -330, 660, 660); g.restore();
+  g.shadowColor = 'rgba(56,189,248,.45)'; g.shadowBlur = 60 * SC; g.drawImage(A.fridge, -330, -330, 660, 660); g.restore();
   // Reflection on the floor.
   g.save(); g.globalAlpha = fa * 0.16; g.translate(fx, fy + 640); g.scale(fs, -fs * 0.5); g.drawImage(A.fridge, -330, -330, 660, 660); g.restore();
   // Sensor callouts.
@@ -244,7 +245,7 @@ function sceneTech(t) {
       glow(x, y, 16, 'rgba(103,232,249,.9)', nk * Math.sin(p * Math.PI));
     }
     for (const [x, y, n, s] of nodes) {
-      g.save(); g.globalAlpha = nk; g.shadowColor = 'rgba(56,189,248,.4)'; g.shadowBlur = 30; rr(x - 150, y - 50, 300, 100, 20); g.fillStyle = 'rgba(10,18,36,.92)'; g.fill(); g.shadowColor = 'transparent'; g.strokeStyle = 'rgba(125,211,252,.55)'; g.lineWidth = 1.5; g.stroke(); g.restore();
+      g.save(); g.globalAlpha = nk; g.shadowColor = 'rgba(56,189,248,.4)'; g.shadowBlur = 30 * SC; rr(x - 150, y - 50, 300, 100, 20); g.fillStyle = 'rgba(10,18,36,.92)'; g.fill(); g.shadowColor = 'transparent'; g.strokeStyle = 'rgba(125,211,252,.55)'; g.lineWidth = 1.5; g.stroke(); g.restore();
       text(n, x, y - 2, 32, 600, '#fff', { align: 'center', alpha: nk });
       text(s, x, y + 32, 21, 400, '#94a3b8', { align: 'center', alpha: nk });
     }
@@ -290,7 +291,7 @@ function sceneApp(t) {
     if (pts && p < 1) {
       const [tl, tr, br, bl] = pts; const sx = lerp(tl[0], tr[0], p), sx2 = lerp(bl[0], br[0], p), sy = lerp(tl[1], tr[1], p), sy2 = lerp(bl[1], br[1], p);
       g.save(); g.globalAlpha = k; g.beginPath(); g.moveTo(sx, sy); g.lineTo(tr[0], tr[1]); g.lineTo(br[0], br[1]); g.lineTo(sx2, sy2); g.closePath(); g.fillStyle = '#060b18'; g.fill();
-      g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(165,243,252,.95)'; g.lineWidth = 3; g.shadowColor = ACC2; g.shadowBlur = 30; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx2, sy2); g.stroke(); g.restore();
+      g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(165,243,252,.95)'; g.lineWidth = 3; g.shadowColor = ACC2; g.shadowBlur = 30 * SC; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx2, sy2); g.stroke(); g.restore();
     }
     title(t, 11.4, 15.8, 'HISTORY & FORECAST', '24 hours to 7 days — and the next 6.', 'The dashed line is your alert limit', { x: 120, y: 980 });
   }
@@ -317,7 +318,7 @@ function phoneMock(x, y, s, alpha, t, notes) {
   if (alpha <= 0) return;
   const w = 430 * s, h = 880 * s;
   g.save(); g.globalAlpha = alpha; g.translate(x, y);
-  g.shadowColor = 'rgba(56,189,248,.35)'; g.shadowBlur = 80; rr(-w / 2 - 14 * s, -h / 2 - 14 * s, w + 28 * s, h + 28 * s, 70 * s); g.fillStyle = '#0b0f19'; g.fill(); g.shadowColor = 'transparent';
+  g.shadowColor = 'rgba(56,189,248,.35)'; g.shadowBlur = 80 * SC; rr(-w / 2 - 14 * s, -h / 2 - 14 * s, w + 28 * s, h + 28 * s, 70 * s); g.fillStyle = '#0b0f19'; g.fill(); g.shadowColor = 'transparent';
   g.strokeStyle = 'rgba(148,163,184,.35)'; g.lineWidth = 2; g.stroke();
   rr(-w / 2, -h / 2, w, h, 56 * s); g.save(); g.clip();
   const lg = g.createLinearGradient(0, -h / 2, 0, h / 2); lg.addColorStop(0, '#0f2547'); lg.addColorStop(0.55, '#0a1630'); lg.addColorStop(1, '#050a16'); g.fillStyle = lg; g.fillRect(-w / 2, -h / 2, w, h);
@@ -351,16 +352,16 @@ function sceneAlerts(t) {
   if (t < 7.2) {
     const k = win(t, 0, 7.2, 0.7, 0.6);
     const cw = 1006, ch = 130, scale = 1.72, w = cw * scale, h = ch * scale, x0 = (W - w) / 2, y0 = 330;
-    g.save(); g.globalAlpha = k; g.shadowColor = 'rgba(56,189,248,.3)'; g.shadowBlur = 60; rr(x0 - 20, y0 - 20, w + 40, h + 40, 22); g.fillStyle = '#0d1117'; g.fill(); g.restore();
+    g.save(); g.globalAlpha = k; g.shadowColor = 'rgba(56,189,248,.3)'; g.shadowBlur = 60 * SC; rr(x0 - 20, y0 - 20, w + 40, h + 40, 22); g.fillStyle = '#0d1117'; g.fill(); g.restore();
     g.save(); g.globalAlpha = k; g.drawImage(A.tempRow, x0, y0, w, h); g.restore();
     // The alert limit (8 °C) is the dashed line in the real chart, at y 551 of the frame.
     const limY = y0 + (551 - 470) * scale;
     const lk = out((t - 1.0) / 0.6) * k;
-    g.save(); g.globalAlpha = lk; g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(244,63,94,.85)'; g.lineWidth = 3; g.shadowColor = WARN; g.shadowBlur = 20; g.setLineDash([14, 10]); g.beginPath(); g.moveTo(x0 + (322 - 257) * scale, limY); g.lineTo(x0 + (1230 - 257) * scale, limY); g.stroke(); g.restore();
+    g.save(); g.globalAlpha = lk; g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(244,63,94,.85)'; g.lineWidth = 3; g.shadowColor = WARN; g.shadowBlur = 20 * SC; g.setLineDash([14, 10]); g.beginPath(); g.moveTo(x0 + (322 - 257) * scale, limY); g.lineTo(x0 + (1230 - 257) * scale, limY); g.stroke(); g.restore();
     text('ALERT LIMIT · 8 °C', x0 + w - 10, limY - 16, 18, 600, '#fda4af', { align: 'right', alpha: lk, font: MONO, spacing: 2 });
     const hx0 = x0 + (322 - 257) * scale, hx1 = x0 + (978 - 257) * scale, p = ease((t - 1.4) / 2.4), hx = lerp(hx0, hx1, p);
     if (t > 1.4) {
-      g.save(); g.globalAlpha = k; g.strokeStyle = 'rgba(165,243,252,.9)'; g.lineWidth = 2; g.shadowColor = ACC2; g.shadowBlur = 16; g.beginPath(); g.moveTo(hx, y0 - 10); g.lineTo(hx, y0 + h + 10); g.stroke(); g.restore();
+      g.save(); g.globalAlpha = k; g.strokeStyle = 'rgba(165,243,252,.9)'; g.lineWidth = 2; g.shadowColor = ACC2; g.shadowBlur = 16 * SC; g.beginPath(); g.moveTo(hx, y0 - 10); g.lineTo(hx, y0 + h + 10); g.stroke(); g.restore();
     }
     if (t > 3.8) {
       const sy = y0 + (536 - 470) * scale, pk = (t - 3.8);
@@ -392,7 +393,7 @@ function sceneAlerts(t) {
     if (pts && t > 14.0) {
       const m = planeMatrix(o), fxy = (fx, fy) => project(m, fx / 960 - 1, 1 - fy / 540);
       const q = [fxy(258, 258), fxy(1774, 258), fxy(1774, 330), fxy(258, 330)], hk = out((t - 14) / 0.5) * k * (0.75 + 0.25 * Math.sin(t * 6));
-      g.save(); g.globalAlpha = hk; g.strokeStyle = WARN; g.lineWidth = 3; g.shadowColor = WARN; g.shadowBlur = 24; g.beginPath(); q.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.stroke(); g.restore();
+      g.save(); g.globalAlpha = hk; g.strokeStyle = WARN; g.lineWidth = 3; g.shadowColor = WARN; g.shadowBlur = 24 * SC; g.beginPath(); q.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.stroke(); g.restore();
     }
     phoneMock(1460, 560 + (1 - outQ((t - 15.6) / 1.0)) * 60, 0.82, k * out((t - 15.6) / 0.8), t, [{ at: 15.8, lines: NOTE1 }, { at: 16.9, lines: NOTE2 }]);
     title(t, 13.2, 19.8, 'LOGGED & RESOLVED', 'Every breach on record.', 'And a message when it is back to normal', { x: 120, y: 990 });
@@ -422,7 +423,7 @@ function sceneReveal(t) {
     g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.12 * k * end;
     for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + t * 0.05; g.fillStyle = 'rgba(147,197,253,1)'; g.beginPath(); g.moveTo(W / 2, 400); g.lineTo(W / 2 + Math.cos(a) * 1400, 400 + Math.sin(a) * 1400); g.lineTo(W / 2 + Math.cos(a + 0.06) * 1400, 400 + Math.sin(a + 0.06) * 1400); g.closePath(); g.fill(); }
     g.restore();
-    g.save(); g.globalAlpha = k * end; g.translate(W / 2, 330); const s = lerp(1.3, 1, outQ((t - 6.2) / 1.8)); g.scale(s, s); g.shadowColor = 'rgba(56,189,248,.8)'; g.shadowBlur = 60; g.drawImage(A.logo, -70, -70, 140, 140); g.restore();
+    g.save(); g.globalAlpha = k * end; g.translate(W / 2, 330); const s = lerp(1.3, 1, outQ((t - 6.2) / 1.8)); g.scale(s, s); g.shadowColor = 'rgba(56,189,248,.8)'; g.shadowBlur = 60 * SC; g.drawImage(A.logo, -70, -70, 140, 140); g.restore();
     text('Kelvin', W / 2, 560, 170, 700, '#fff', { align: 'center', alpha: k * end, spacing: lerp(30, -3, outQ((t - 6.2) / 2)) });
     text('Know before it spoils.', W / 2, 650, 52, 300, '#e0f2fe', { align: 'center', alpha: out((t - 7.4) / 1.0) * end, blur: (1 - out((t - 7.4) / 0.9)) * 8 });
     text('Smart fridge monitoring · ESP32 · DHT11 · CCS811', W / 2, 720, 26, 400, '#94a3b8', { align: 'center', alpha: out((t - 8.2) / 1.0) * end });
@@ -471,5 +472,5 @@ export function setup(url) {
   })();
   return ready;
 }
-/** Draws the frame at time T (seconds) and returns the 1920×1080 canvas. */
+/** Draws the frame at time T (seconds) and returns the canvas (1920×1080 × SC). */
 export function drawFrame(T) { render(T); return c; }
