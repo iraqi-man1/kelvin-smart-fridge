@@ -5,6 +5,7 @@ import { createAccounts } from '../server/accounts.mjs';
 import { createDevice } from '../server/device.mjs';
 import { createMailer } from '../server/mailer.mjs';
 import { createPostgresStore } from '../server/store.mjs';
+import { signUp } from './signup.mjs';
 
 // Online (Netlify) each request may land on a different copy of the server. These copies
 // share only the database, so everything they need must be read from it.
@@ -16,7 +17,7 @@ test('an emailed sign-in code made by one server copy works on another', async (
   const mailer = createMailer({}, { transport: { sendMail: async m => { sent.push(m); } } });
   const code = () => sent.at(-1).text.match(/(\d{3}) (\d{3})/).slice(1).join('');
   const one = createAccounts({ store, mailer });
-  const { token } = await one.register({ name: 'Ali', email: 'copy@example.test', password: 'account-pass' });
+  const { token } = await signUp(one, { name: 'Ali', email: 'copy@example.test', password: 'account-pass' }, sent);
   const user = await one.userFor(token);
   const start = await one.startOtp(user, 'en');
   await one.enableOtp(user, { challenge: start.challenge, code: code() }, 'k');

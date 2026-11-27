@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { createAccounts } from '../server/accounts.mjs';
 import { createMailer, codeEmail } from '../server/mailer.mjs';
 import { createJsonStore, createPostgresStore } from '../server/store.mjs';
+import { signUp } from './signup.mjs';
 
 /** A mailbox instead of SMTP: every email lands in `sent`. */
 function fakeMail() {
@@ -21,7 +22,7 @@ const stores = {
 
 async function userWithOtp(store, mail, clock) {
   const a = createAccounts({ store, mailer: mail.mailer, now: () => clock.t });
-  const { token } = await a.register({ name: 'Ali', email: 'ali.ahmed@example.test', password: 'account-pass' });
+  const { token } = await signUp(a, { name: 'Ali', email: 'ali.ahmed@example.test', password: 'account-pass' }, mail.sent);
   const user = await a.userFor(token);
   const start = await a.startOtp(user, 'en');
   assert.match(mail.sent.at(-1).subject, /Confirm your email/);

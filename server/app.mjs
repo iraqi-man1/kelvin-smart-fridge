@@ -105,8 +105,17 @@ export async function createApp({ dataDir, readingsFile, databaseUrl, serverless
       return json(res, 201, { user }, await signedIn(req, user, t));
     }
     if (p === '/api/auth/register' && m === 'POST') {
-      const { user, token: t } = await accounts.register(await jsonBody(req));
+      const result = await accounts.register(await jsonBody(req), ip);
+      // Usually no account yet: a code went to the email, and the browser asks for it.
+      if (result.otp) return json(res, 202, { otp: result.otp });
+      await note(result.user.id, 'login');
+      await audit('account-created', req, { actor: result.user });
+      return json(res, 201, { user: result.user }, await signedIn(req, result.user, result.token));
+    }
+    if (p === '/api/auth/signup/verify' && m === 'POST') {
+      const { user, token: t } = await accounts.verifySignup(await jsonBody(req), ip);
       await note(user.id, 'login');
+      await audit('account-created', req, { actor: user });
       return json(res, 201, { user }, await signedIn(req, user, t));
     }
     if (p === '/api/auth/login' && m === 'POST') {

@@ -37,22 +37,22 @@ export function createMailer(env = process.env, { transport } = {}) {
 const TEXT = {
   ar: {
     dir: 'rtl',
-    subject: { login: 'رمز تسجيل الدخول إلى Kelvin', enable: 'تأكيد بريدك في Kelvin', reset: 'إعادة تعيين كلمة السر في Kelvin' },
-    intro: { login: 'هذا رمز تسجيل الدخول إلى لوحة Kelvin:', enable: 'هذا رمز تفعيل التحقق بخطوتين في Kelvin:', reset: 'هذا رمز إعادة تعيين كلمة سر حسابك في Kelvin:' },
+    subject: { login: 'رمز تسجيل الدخول إلى Kelvin', enable: 'تأكيد بريدك في Kelvin', reset: 'إعادة تعيين كلمة السر في Kelvin', signup: 'أكّد حسابك الجديد في Kelvin' },
+    intro: { login: 'هذا رمز تسجيل الدخول إلى لوحة Kelvin:', enable: 'هذا رمز تفعيل التحقق بخطوتين في Kelvin:', reset: 'هذا رمز إعادة تعيين كلمة سر حسابك في Kelvin:', signup: 'أهلاً بك في Kelvin! اكتب هذا الرمز في صفحة التسجيل حتى تأكّد بريدك ويكتمل إنشاء حسابك:' },
     expires: 'ينتهي خلال 10 دقائق.',
     ignore: 'إذا لم تطلب هذا الرمز فتجاهل الرسالة، ولا تعطه لأي شخص.',
   },
   en: {
     dir: 'ltr',
-    subject: { login: 'Your Kelvin sign-in code', enable: 'Confirm your email for Kelvin', reset: 'Reset your Kelvin password' },
-    intro: { login: 'Here is your code to sign in to the Kelvin dashboard:', enable: 'Here is your code to turn on two-step sign-in in Kelvin:', reset: 'Here is your code to reset your Kelvin password:' },
+    subject: { login: 'Your Kelvin sign-in code', enable: 'Confirm your email for Kelvin', reset: 'Reset your Kelvin password', signup: 'Confirm your new Kelvin account' },
+    intro: { login: 'Here is your code to sign in to the Kelvin dashboard:', enable: 'Here is your code to turn on two-step sign-in in Kelvin:', reset: 'Here is your code to reset your Kelvin password:', signup: 'Welcome to Kelvin! Type this code on the sign-up page to confirm your email and finish creating your account:' },
     expires: 'It expires in 10 minutes.',
     ignore: 'If you did not ask for this code, ignore this email and do not share the code with anyone.',
   },
   ms: {
     dir: 'ltr',
-    subject: { login: 'Kod log masuk Kelvin anda', enable: 'Sahkan e-mel anda untuk Kelvin', reset: 'Tetapkan semula kata laluan Kelvin anda' },
-    intro: { login: 'Ini kod untuk log masuk ke papan pemuka Kelvin:', enable: 'Ini kod untuk menghidupkan log masuk dua langkah dalam Kelvin:', reset: 'Ini kod untuk menetapkan semula kata laluan Kelvin anda:' },
+    subject: { login: 'Kod log masuk Kelvin anda', enable: 'Sahkan e-mel anda untuk Kelvin', reset: 'Tetapkan semula kata laluan Kelvin anda', signup: 'Sahkan akaun Kelvin baharu anda' },
+    intro: { login: 'Ini kod untuk log masuk ke papan pemuka Kelvin:', enable: 'Ini kod untuk menghidupkan log masuk dua langkah dalam Kelvin:', reset: 'Ini kod untuk menetapkan semula kata laluan Kelvin anda:', signup: 'Selamat datang ke Kelvin! Taip kod ini pada halaman pendaftaran untuk mengesahkan e-mel anda dan melengkapkan akaun anda:' },
     expires: 'Ia tamat tempoh dalam 10 minit.',
     ignore: 'Jika anda tidak meminta kod ini, abaikan e-mel ini dan jangan kongsi kod ini dengan sesiapa.',
   },

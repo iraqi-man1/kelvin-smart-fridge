@@ -42,8 +42,8 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
   const [inviteGone, setInviteGone] = useState(false);
   useEffect(() => { if (inviteCode) api.previewInvite(inviteCode).then(setInvite).catch(() => setInviteGone(true)); }, [inviteCode]);
   const [mode, setMode] = useState<'in' | 'up'>('in');
-  // Only the very first account signs itself up; after that it is invitations only.
-  const [signup, setSignup] = useState<{ firstAccount: boolean } | null>(null);
+  // Anyone can make an account; the first one becomes the admin, later ones start as viewers.
+  const [signup, setSignup] = useState<{ firstAccount: boolean; open: boolean; emailReady: boolean } | null>(null);
   useEffect(() => { api.signupInfo().then(setSignup).catch(() => {}); }, []);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -52,6 +52,8 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [otp, setOtp] = useState<Otp | null>(null);
+  // The emailed code either finishes a sign-in (two-step) or confirms a new account.
+  const [otpFor, setOtpFor] = useState<'login' | 'signup'>('login');
   const [code, setCode] = useState('');
   const [sentAt, setSentAt] = useState(0);
   // Forgotten password: first the email, then the emailed code with a new password.
@@ -68,11 +70,13 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
     setBusy(true); setError('');
     try {
       if (mode === 'up') {
-        onSignedIn(await api.register(name, email, password));
+        const r = await api.register(name, email, password, lang);
+        if (r.otp) { setOtpFor('signup'); setOtp(r.otp); setCode(''); setSentAt(Date.now()); }
+        else if (r.user) onSignedIn(r.user);
         return;
       }
       const r = await api.login(email, password, lang);
-      if (r.otp) { setOtp(r.otp); setCode(''); setSentAt(Date.now()); }
+      if (r.otp) { setOtpFor('login'); setOtp(r.otp); setCode(''); setSentAt(Date.now()); }
       else if (r.user) onSignedIn(r.user);
     }
     catch (err) { setError(err instanceof Error ? err.message : 'request-failed'); }
@@ -82,7 +86,7 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
   async function verify(value = code) {
     if (!otp || value.length !== 6) return;
     setBusy(true); setError('');
-    try { onSignedIn(await api.verifyOtp(otp.challenge, value)); }
+    try { onSignedIn(otpFor === 'signup' ? await api.verifySignup(otp.challenge, value) : await api.verifyOtp(otp.challenge, value)); }
     catch (err) {
       const c = err instanceof Error ? err.message : 'request-failed';
       setError(c); setCode('');
@@ -227,8 +231,8 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
         <p className="auth-local"><ShieldCheck size={15}/>{t.reset.note}</p>
       </form> : otp ? <form className="auth-card otp-card" onSubmit={e => { e.preventDefault(); verify(); }} noValidate>
         <span className="otp-icon" aria-hidden="true"><MailCheck size={26}/></span>
-        <h2>{t.otp.loginTitle}</h2>
-        <p className="auth-sub">{t.otp.sentTo} <b dir="ltr">{otp.email}</b></p>
+        <h2>{otpFor === 'signup' ? a.confirmTitle : t.otp.loginTitle}</h2>
+        <p className="auth-sub">{t.otp.sentTo} <b dir="ltr">{otp.email}</b>{otpFor === 'signup' && <>. {a.confirmSub}</>}</p>
         <div className="otp-field"><OtpInput value={code} onChange={setCode} onComplete={verify} disabled={busy} autoFocus/></div>
         {message && <p className="auth-error" role="alert">{message}</p>}
         <button className="button primary auth-submit" type="submit" disabled={busy || code.length !== 6}>{busy ? a.working : t.otp.verify}{!busy && <Go size={17}/>}</button>
@@ -238,16 +242,16 @@ export function AuthScreen({ onSignedIn, setLang, notice, app, student }: Props)
         </div>
         <p className="auth-local"><ShieldCheck size={15}/>{t.otp.expires}</p>
       </form> : <form className="auth-card" onSubmit={submit} noValidate>
-        {signup?.firstAccount && <div className="auth-tabs" role="tablist" aria-label={a.signIn}>
+        <div className="auth-tabs" role="tablist" aria-label={a.signIn}>
           <button type="button" role="tab" aria-selected={mode === 'in'} onClick={() => switchTo('in')}>{a.signIn}</button>
           <button type="button" role="tab" aria-selected={mode === 'up'} onClick={() => switchTo('up')}>{a.signUp}</button>
-        </div>}
+        </div>
         <h2>{mode === 'in' ? a.welcome : a.join}</h2>
         <p className="auth-sub">{mode === 'in' ? a.welcomeSub : a.joinSub}</p>
         {notice && mode === 'in' && !error && <p className="auth-notice">{notice}</p>}
 
         <div className="auth-fields">
-          {mode === 'up' && signup?.firstAccount && <p className="auth-notice first-note">{a.firstAccount}</p>}
+          {mode === 'up' && signup && <p className="auth-notice first-note">{signup.firstAccount ? a.firstAccount : a.newAccount}</p>}
           {mode === 'up' && <label>{a.name}
             <span className="auth-input"><UserIcon size={17}/><input required autoComplete="name" maxLength={80} value={name} onChange={e => setName(e.target.value)}/></span></label>}
           <label>{a.email}

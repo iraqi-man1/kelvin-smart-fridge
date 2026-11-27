@@ -57,8 +57,10 @@ export const api = {
   lock: () => call('/api/auth/lock', 'POST', {}),
   unlock: (method: 'code' | 'password', secret: string) => call('/api/auth/unlock', 'POST', { method, secret }),
   lockCode: (password: string, code: string | null) => call<{ user: User }>('/api/me/lock-code', 'PUT', { password, code }).then(b => b.user),
-  register: (name: string, email: string, password: string) => call<{ user: User }>('/api/auth/register', 'POST', { name, email, password }).then(b => b.user),
-  signupInfo: () => call<{ firstAccount: boolean }>('/api/auth/signup-info'),
+  // Sign-up usually answers with an emailed code (otp); the account is made once it is typed.
+  register: (name: string, email: string, password: string, lang: string) => call<{ user?: User; otp?: Otp }>('/api/auth/register', 'POST', { name, email, password, lang }),
+  verifySignup: (challenge: string, code: string) => call<{ user: User }>('/api/auth/signup/verify', 'POST', { challenge, code }).then(b => b.user),
+  signupInfo: () => call<{ firstAccount: boolean; open: boolean; emailReady: boolean }>('/api/auth/signup-info'),
   // An emailed invitation: what it is for, then accept it with the password the admin chose.
   previewInvite: (code: string) => call<InvitePreview>(`/api/auth/invite?code=${encodeURIComponent(code)}`),
   acceptInvite: (invite: string, password: string) => call<{ user: User }>('/api/auth/invite', 'POST', { invite, password }).then(b => b.user),

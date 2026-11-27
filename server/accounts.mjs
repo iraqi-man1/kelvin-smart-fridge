@@ -27,6 +27,8 @@ const INVITE_DAYS = 7;
 const FAIL_LIMIT = 10, ACCOUNT_LIMIT = 5, FAIL_WINDOW = 15 * 60000;
 // Email codes: 6 digits, 10 minutes, 5 tries, one new email a minute, 5 emails per code.
 const OTP_TTL = 10 * 60000, OTP_TRIES = 5, OTP_RESEND = 60000, OTP_SENDS = 5;
+// Sign-ups from one address in 15 minutes (each one sends an email).
+const SIGNUP_LIMIT = 5;
 const LANGS = ['ar', 'en', 'ms'];
 const notConfigured = { configured: false, send: async () => { throw new AccountError('email-not-configured', 503); } };
 
@@ -178,11 +180,11 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
     }
   }
 
-  async function issue(user, purpose, lang) {
+  async function issue(user, purpose, lang, extra = {}) {
     if (!mailer.configured) throw new AccountError('email-not-configured', 503);
     for (const [id, c] of challenges) if (c.expires < now()) challenges.delete(id);
     const id = randomUUID();
-    const challenge = { userId: user.id, purpose, lang: LANGS.includes(lang) ? lang : 'ar' };
+    const challenge = { userId: user.id, purpose, lang: LANGS.includes(lang) ? lang : 'ar', ...extra };
     await sendCode(id, challenge, user);
     challenges.set(id, challenge);
     return { challenge: id, email: mask(user.email), resendIn: OTP_RESEND / 1000 };
@@ -243,19 +245,48 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
   const api = {
     ready, publicUser, refresh,
 
-    async register(input) {
+    /**
+     * Anyone can make their own account. A 6-digit code goes to the email address, and the
+     * account exists only once that code is typed (verifySignup), so every account has an
+     * email its owner can read. The first account becomes the admin; later ones start as
+     * viewers (they look only) until an admin gives them more.
+     * With no email set up (a local test server), the first account is made at once.
+     */
+    async register(input, key = 'any') {
       await ready;
       const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
       if (!EMAIL.test(email)) throw new AccountError('invalid-email');
-      checkNewPassword(input.password);
-      const profile = cleanProfile({ name: input.name }, { requireName: true });
+      checkNewPassword(input?.password);
+      const profile = cleanProfile({ name: input?.name }, { requireName: true });
       if (users.some(u => u.email === email)) throw new AccountError('email-taken', 409);
-      // Only the very first account signs itself up (and becomes the admin). Everyone after
-      // that joins through an emailed invitation from an admin (acceptInvite).
-      if (users.length) throw new AccountError('invite-required', 403);
-      const user = { id: randomUUID(), email, password: await hashPassword(input.password), createdAt: now(), role: 'admin', ...profile };
+      if (!users.length && !mailer.configured) {
+        const user = { id: randomUUID(), email, password: await hashPassword(input.password), createdAt: now(), role: 'admin', ...profile };
+        await store.saveUser(user);
+        users.push(user);
+        return { user: publicUser(user), token: await newSession(user) };
+      }
+      if (!mailer.configured) throw new AccountError('email-not-configured', 503);
+      // Each sign-up sends an email: a few per address, then wait.
+      const signupKey = `signup:${key}`;
+      const f = failures.get(signupKey);
+      if (f && now() - f.since < FAIL_WINDOW && f.count >= SIGNUP_LIMIT) throw new AccountError('too-many', 429);
+      fail(signupKey);
+      // Not an account yet: kept with the code (only the password's hash) until it is confirmed.
+      const pending = { id: randomUUID(), email, password: await hashPassword(input.password), ...profile };
+      return { otp: await issue(pending, 'signup', input?.lang, { pending }) };
+    },
+
+    /** Sign-up, step 2: the emailed code confirms the address, and the account is made. */
+    async verifySignup(input, key = 'any') {
+      await ready;
+      const c = checkCode(input, 'signup', key);
+      const p = c.pending;
+      if (!p) throw new AccountError('otp-expired', 400);
+      if (users.some(u => u.email === p.email)) throw new AccountError('email-taken', 409);
+      const user = { id: p.id, email: p.email, password: p.password, name: p.name, createdAt: now(), emailVerifiedAt: now(), role: users.length ? 'viewer' : 'admin' };
       await store.saveUser(user);
       users.push(user);
+      await remember(user.id, { sealed: null, by: user.name, self: true });
       return { user: publicUser(user), token: await newSession(user) };
     },
 
@@ -299,7 +330,8 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
       if (!c || c.expires < now()) throw new AccountError('otp-expired', 400);
       if (now() - c.sentAt < OTP_RESEND) throw new AccountError('otp-wait', 429);
       if (c.sends >= OTP_SENDS) { challenges.delete(id); throw new AccountError('too-many', 429); }
-      const user = users.find(u => u.id === c.userId);
+      // A sign-up has no account yet: its code goes to the address it was made with.
+      const user = users.find(u => u.id === c.userId) ?? c.pending;
       if (!user) throw new AccountError('otp-expired', 400);
       await sendCode(id, c, user);
       return { challenge: id, email: mask(user.email), resendIn: OTP_RESEND / 1000 };
@@ -334,10 +366,10 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
       return { user: publicUser(user), token: await newSession(user) };
     },
 
-    /** What the sign-in page needs to know: is this the first account, and is sign-up open. */
+    /** What the sign-in page needs to know: is this the first account, and can codes be emailed. */
     async signupInfo() {
       await ready;
-      return { firstAccount: users.length === 0 };
+      return { firstAccount: users.length === 0, open: true, emailReady: mailer.configured };
     },
 
     // ----- Admin: users, roles and invitations -----
@@ -617,7 +649,7 @@ export function createAccounts({ store, dir, now = Date.now, mailer = notConfigu
       sessions = sessions.filter(s => s.userId !== user.id);
     },
   };
-  for (const name of ['acceptInvite', 'login', 'verifyLogin', 'resendCode', 'startOtp', 'enableOtp', 'requestReset', 'resetPassword', 'unlock']) {
+  for (const name of ['register', 'verifySignup', 'acceptInvite', 'login', 'verifyLogin', 'resendCode', 'startOtp', 'enableOtp', 'requestReset', 'resetPassword', 'unlock']) {
     const method = api[name];
     api[name] = async function (...args) {
       await ready;

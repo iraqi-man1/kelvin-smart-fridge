@@ -7,6 +7,7 @@ import { can, createAccounts } from '../server/accounts.mjs';
 import { createDevice } from '../server/device.mjs';
 import { createMailer } from '../server/mailer.mjs';
 import { createJsonStore, createPostgresStore } from '../server/store.mjs';
+import { signUp } from './signup.mjs';
 
 const stores = {
   json: async () => createJsonStore(path.join(tmpdir(), `kelvin-roles-${Math.random()}`)),
@@ -26,10 +27,10 @@ for (const [name, make] of Object.entries(stores)) {
     const store = await make();
     const mail = fakeMail();
     const a = createAccounts({ store, mailer: mail.mailer });
-    assert.deepEqual(await a.signupInfo(), { firstAccount: true });
-    const { user: admin } = await a.register({ name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' });
+    assert.deepEqual(await a.signupInfo(), { firstAccount: true, open: true, emailReady: true });
+    const { user: admin } = await signUp(a, { name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' }, mail.sent);
     assert.equal(admin.role, 'admin');
-    await assert.rejects(a.register({ name: 'B', email: 'b@example.test', password: 'member-pass1' }), { code: 'invite-required' });
+    assert.equal((await a.signupInfo()).firstAccount, false);
 
     const adminUser = (await a.listUsers())[0];
     await assert.rejects(a.createInvite(adminUser, { name: 'B', email: 'b@example.test', role: 'member', password: 'short' }, 'https://x.test'), { code: 'weak-password' });
@@ -64,7 +65,7 @@ for (const [name, make] of Object.entries(stores)) {
 test('admins manage roles; the last admin cannot be demoted, and nobody removes themselves', async () => {
   const mail = fakeMail();
   const a = createAccounts({ store: await stores.json(), mailer: mail.mailer });
-  const { token } = await a.register({ name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' });
+  const { token } = await signUp(a, { name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' }, mail.sent);
   const admin = await a.userFor(token);
   await assert.rejects(a.setRole(admin, admin.id, 'viewer'), { code: 'last-admin' });
   await assert.rejects(a.removeUser(admin, admin.id), { code: 'not-yourself' });
@@ -117,7 +118,7 @@ test('the admin sees the password they set, can change it any time, and loses si
   const mail = fakeMail();
   const store = await stores.json();
   const a = createAccounts({ store, mailer: mail.mailer, vaultKey: 'test-key' });
-  const { token } = await a.register({ name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' });
+  const { token } = await signUp(a, { name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' }, mail.sent);
   const admin = await a.userFor(token);
   const { link } = await a.createInvite(admin, { name: 'S', email: 's@example.test', role: 'viewer', password: 'given-pass1' }, 'http://localhost');
   assert.match(link, /\?invite=/);
@@ -146,7 +147,7 @@ test('the admin sees the password they set, can change it any time, and loses si
 test('a viewer sees the admin\'s dashboard settings and cannot change them', async () => {
   const mail = fakeMail();
   const a = createAccounts({ store: await stores.json(), mailer: mail.mailer });
-  const { token } = await a.register({ name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' });
+  const { token } = await signUp(a, { name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' }, mail.sent);
   const admin = await a.userFor(token);
   await a.savePrefs(admin, { settings: { tempMax: 6 } });
   await a.createInvite(admin, { name: 'V', email: 'v@example.test', role: 'viewer', password: 'viewer-pass1' }, 'http://localhost');

@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { createAccounts } from '../server/accounts.mjs';
 import { createMailer } from '../server/mailer.mjs';
 import { createJsonStore, createPostgresStore } from '../server/store.mjs';
+import { signUp } from './signup.mjs';
 
 function fakeMail() {
   const sent = [];
@@ -22,7 +23,7 @@ for (const [name, make] of Object.entries(stores)) {
     const mail = fakeMail();
     const store = await make();
     const a = createAccounts({ store, mailer: mail.mailer });
-    const { token: oldSession } = await a.register({ name: 'Ali', email: 'ali@example.test', password: 'old-password' });
+    const { token: oldSession } = await signUp(a, { name: 'Ali', email: 'ali@example.test', password: 'old-password' }, mail.sent);
 
     const req = await a.requestReset({ email: 'ALI@example.test ', lang: 'en' });
     assert.equal(req.email, 'a**@example.test');

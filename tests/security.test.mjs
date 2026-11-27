@@ -8,6 +8,7 @@ import { createDevice } from '../server/device.mjs';
 import { createMailer } from '../server/mailer.mjs';
 import { browserName, createSecurity } from '../server/security.mjs';
 import { bucketReadings, createJsonStore, createPostgresStore } from '../server/store.mjs';
+import { signUp } from './signup.mjs';
 
 const stores = {
   json: async () => createJsonStore(path.join(tmpdir(), `kelvin-sec-${Math.random()}`)),
@@ -91,7 +92,7 @@ for (const [name, make] of Object.entries(stores)) {
     const store = await make();
     const mail = mailbox();
     const before = createAccounts({ store, mailer: mail.mailer, vaultKey: 'postgres://old-database-address' });
-    await before.register({ name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' });
+    await signUp(before, { name: 'Ali', email: 'ali@example.test', password: 'admin-pass1' }, mail.sent);
     const admin = (await before.listUsers())[0];
     await before.createInvite(admin, { name: 'B', email: 'b@example.test', role: 'member', password: 'given-pass1' }, 'https://x.test');
     const code = decodeURIComponent(mail.sent.at(-1).text.match(/\?invite=(\S+)/)[1]);
